@@ -12,11 +12,21 @@
 #include <voxblox/core/voxel.h>
 #include <voxblox/mesh/mesh_layer.h>
 #include <voxblox/utils/timing.h>
+#include <voxblox/utils/color_maps.h>
 
 namespace panoptic_mapping {
-/**
- * @brief Common Type definitions for the full framework.
- */
+
+// Aligned Eigen containers
+template <typename Type>
+using AlignedVector = std::vector<Type, Eigen::aligned_allocator<Type>>;
+template <typename Type>
+using AlignedDeque = std::deque<Type, Eigen::aligned_allocator<Type>>;
+template <typename Type>
+using AlignedQueue = std::queue<Type, AlignedDeque<Type>>;
+template <typename Type>
+using AlignedStack = std::stack<Type, AlignedDeque<Type>>;
+template <typename Type>
+using AlignedList = std::list<Type, Eigen::aligned_allocator<Type>>;
 
 // Types.
 // Type used for counting voxels. This stores up to ~65k measurements so should
@@ -24,22 +34,44 @@ namespace panoptic_mapping {
 // serialization still works!
 using ClassificationCount = uint16_t;
 
-// Wroking with voxblox maps.
+// Type definitions to work with a voxblox map.
 using FloatingPoint = voxblox::FloatingPoint;
-using VoxelIndex = voxblox::VoxelIndex;
-using BlockIndex = voxblox::BlockIndex;
-using Color = voxblox::Color;
 
 // Geometry.
 using Point = voxblox::Point;
+using Ray = voxblox::Ray;
+using Color = voxblox::Color;
 using Transformation = voxblox::Transformation;
 using Pointcloud = voxblox::Pointcloud;
+using GlobalIndex = voxblox::GlobalIndex;
+using BlockIndex = voxblox::BlockIndex;
+using VoxelIndex = voxblox::VoxelIndex;
+using IndexList = voxblox::GlobalIndexList;
+using LongIndexHash = voxblox::LongIndexHash;
+using Colors = voxblox::Colors;
+using ColorMap = voxblox::ColorMap;
+using RainbowColorMap = voxblox::RainbowColorMap;
 
-// Tsdf and mesh Maps. Classification maps are defined in class_layer.h
+
+// Tsdf and class Maps.
 using TsdfVoxel = voxblox::TsdfVoxel;
-using TsdfBlock = voxblox::Block<TsdfVoxel>;
-using TsdfLayer = voxblox::Layer<TsdfVoxel>;
+using TsdfBlock = voxblox::Block<voxblox::TsdfVoxel>;
+using TsdfLayer = voxblox::Layer<voxblox::TsdfVoxel>;
+using EsdfVoxel = voxblox::EsdfVoxel;
+using EsdfBlock = voxblox::Block<voxblox::EsdfVoxel>;
+using EsdfLayer = voxblox::Layer<voxblox::EsdfVoxel>;
+using OccVoxel = voxblox::OccupancyVoxel;
+using OccBlock = voxblox::Block<voxblox::OccupancyVoxel>;
+using OccLayer = voxblox::Layer<voxblox::OccupancyVoxel>;
 using MeshLayer = voxblox::MeshLayer;
+
+struct Label;
+typedef AlignedVector<Label> Labels;
+
+// Constants used across the library.
+constexpr FloatingPoint kEpsilon = 1e-6; /**< Used for coordinates. */
+constexpr float kFloatEpsilon = 1e-6;    /**< Used for weights. */
+constexpr int kKITTIMaxIntstance = 1000;    /**< Used for assign an unqiue panoptic label. */
 
 // Panoptic type labels.
 enum class PanopticLabel { kUnknown = 0, kInstance, kBackground, kFreeSpace };
@@ -54,8 +86,27 @@ inline std::string panopticLabelToString(const PanopticLabel& label) {
     case PanopticLabel::kFreeSpace:
       return "FreeSpace";
   }
-  return "UnknownPanopticLabel";
 }
+
+struct Label {
+  Label() : sem_label(0), ins_label(0) {}
+  Label(short int _sem_label, short int _ins_label) 
+      : sem_label(_sem_label), ins_label(_ins_label) {}
+  Label(uint32_t label) {
+    full_label = label;
+    sem_label = label & 0xFFFF; 
+    ins_label = label >> 16; 
+    // TODO(py): to do a better hashing or increase the number of 1000 here
+    id_label = sem_label * kKITTIMaxIntstance + ins_label; 
+    // name = semanticKittiLabelNameLUT(sem_label);
+  }
+
+  int id_label; 
+  uint32_t full_label;
+  short int sem_label; //int16_t
+  short int ins_label; //int16_t
+  //std::string name;
+};
 
 // Iso-surface-points are used to check alignment and represent the surface
 // of finished submaps.

@@ -7,6 +7,7 @@
 
 #include "panoptic_mapping/common/common.h"
 #include "panoptic_mapping/labels/label_entry.h"
+#include "panoptic_mapping/labels/semantic_kitti_label.h"
 
 namespace panoptic_mapping {
 
@@ -46,6 +47,9 @@ class LabelHandlerBase {
 
   // Get the number of stored labels.
   size_t numberOfLabels() const;
+  
+  // ADD(py): only for semantic KITTI dataset
+  bool assignLabelsSemanticKITTI(Labels& labels);
 
  protected:
   // List of the labels associated with each segmentation ID. Labels are stored

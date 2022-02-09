@@ -1,6 +1,7 @@
 #include "panoptic_mapping/map_management/activity_manager.h"
 
 #include <unordered_set>
+#include <ros/ros.h>
 
 namespace panoptic_mapping {
 
@@ -30,13 +31,17 @@ void ActivityManager::processSubmaps(SubmapCollection* submaps) {
       continue;
     }
 
-    // Check for re-detections of new submaps.
+    // Check for re-detections of new submaps. 
+    // If the submap is not tracked continously for k frames, the submap would be removed
     if (!checkRequiredRedetection(&submap)) {
       submaps_to_delete.insert(submap.getID());
+      if (config_.verbosity >= 3)
+        ROS_INFO("Removed submap %d (%s) [redetection not enough]", submap.getID(), submap.getName().c_str());
       continue;
     }
 
     // Check tracking for active submaps.
+    // if the active submap is not not detected for Y consecutive frames, deactivate the active submap
     checkMissedDetections(&submap);
   }
 
@@ -45,26 +50,27 @@ void ActivityManager::processSubmaps(SubmapCollection* submaps) {
     submaps->removeSubmap(id);
   }
 
-  // Reset.
+  // Reset tracked status:
+  // would be true again if the submap is tracked through the projective tracker at the next frame
   for (Submap& submap : *submaps) {
     submap.setWasTracked(false);
   }
 }
 
 bool ActivityManager::checkRequiredRedetection(Submap* submap) {
-  // Check the submap was re-detected in X consecutive frames after allocation.
+  // Check the submap was re-detected in X consecutive frames after the first allocation.
   if (config_.required_reobservations <= 0) {
     return true;
   }
   const int submap_id = submap->getID();
   auto it = submap_redetection_counts_.find(submap_id);
-  if (it == submap_redetection_counts_.end()) {
+  if (it == submap_redetection_counts_.end()) { // not found, start record the submap
     // This is a new submap.
     submap_redetection_counts_[submap_id] = config_.required_reobservations;
     return true;
   }
   if (it->second <= 0) {
-    // This submap already passed the re-detection test.
+    // This submap already passed the re-detection test, the submap would be kept
     return true;
   }
   if (submap->wasTracked()) {
@@ -72,12 +78,14 @@ bool ActivityManager::checkRequiredRedetection(Submap* submap) {
     it->second--;
     return true;
   }
-  // Not detected, remove the submap.
+  // Not detected (tracked) for X consecutive frames, this submap would be a candidate for removing.
   return false;
 }
 
 void ActivityManager::checkMissedDetections(Submap* submap) {
   // Check whether a submap was not detected for X consecutive frames.
+  // If the submap is not detected for X consecutive frames, the submap 
+  // would become an inactive submap
   if (config_.deactivate_after_missed_detections <= 0) {
     return;
   }
@@ -88,14 +96,18 @@ void ActivityManager::checkMissedDetections(Submap* submap) {
     auto it = submap_missed_detection_counts_.find(submap->getID());
     if (it == submap_missed_detection_counts_.end()) {
       // First missed detection, add to counter.
+      // submap_missed_detection_counts_[submap->getID()] = config_.deactivate_after_missed_detections;
       it = submap_missed_detection_counts_.insert(
           submap_missed_detection_counts_.end(),
-          std::pair(submap->getID(),
+          std::pair<int, int>(submap->getID(),
                     config_.deactivate_after_missed_detections));
     }
     it->second--;
     if (it->second <= 0) {
-      submap->finishActivePeriod();
+      submap->finishActivePeriod(); // deactivate
+      if (config_.verbosity > 3) {
+        ROS_INFO("Deactivate submap %d (%s)", submap->getID(), submap->getName().c_str());
+      }
     }
   }
 }

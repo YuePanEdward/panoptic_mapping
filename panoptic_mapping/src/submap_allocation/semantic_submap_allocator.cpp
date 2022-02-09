@@ -7,7 +7,7 @@ config_utilities::Factory::RegistrationRos<SubmapAllocatorBase,
     SemanticSubmapAllocator::registration_("semantic");
 
 void SemanticSubmapAllocator::Config::checkParams() const {
-  checkParamConfig(submap);
+  checkParamConfig(submap_config);
   checkParamGT(small_instance_voxel_size, 0.f, "small_instance_voxel_size");
   checkParamGT(medium_instance_voxel_size, 0.f, "medium_instance_voxel_size");
   checkParamGT(large_instance_voxel_size, 0.f, "large_instance_voxel_size");
@@ -18,7 +18,7 @@ void SemanticSubmapAllocator::Config::checkParams() const {
 
 void SemanticSubmapAllocator::Config::setupParamsAndPrinting() {
   setupParam("verbosity", &verbosity);
-  setupParam("submap", &submap);
+  setupParam("submap_config", &submap_config);
   setupParam("small_instance_voxel_size", &small_instance_voxel_size);
   setupParam("medium_instance_voxel_size", &medium_instance_voxel_size);
   setupParam("large_instance_voxel_size", &large_instance_voxel_size);
@@ -38,9 +38,15 @@ Submap* SemanticSubmapAllocator::allocateSubmap(SubmapCollection* submaps,
                                                 InputData* /* input */,
                                                 int input_id,
                                                 const LabelEntry& label) {
-  Submap::Config config = config_.submap;
+  Submap::Config config = config_.submap_config;
 
   // Setup the voxel size.
+  // --Instance
+  //    -- S
+  //    -- M
+  //    -- L
+  // --Background
+  // --Unknown
   switch (label.label) {
     case PanopticLabel::kInstance: {
       if (label.size == "L") {
@@ -73,6 +79,8 @@ Submap* SemanticSubmapAllocator::allocateSubmap(SubmapCollection* submaps,
   new_submap->setClassID(label.class_id);
   new_submap->setLabel(label.label);
   new_submap->setName(label.name);
+  new_submap->setNormalReliability(label.normal_reliable);
+ 
   return new_submap;
 }
 

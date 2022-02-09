@@ -27,7 +27,7 @@ class ThreadSafeSubmapCollection {
   // Update the lookup submaps based on the source submaps.
   void update() {
     Timer timer("tools/thread_safe_submap_collection/update");
-    submaps_ = submaps_source_->clone();
+    submaps_ = submaps_source_->clone(); //NOTE(py): Problem is here, memory leakage 
     timer.Stop();
     *updated_ = true;
   }

@@ -9,6 +9,7 @@
 #include "panoptic_mapping/labels/label_handler_base.h"
 #include "panoptic_mapping/map/classification/class_layer.h"
 #include "panoptic_mapping/tracking/id_tracker_base.h"
+#include "panoptic_mapping/tools/map_renderer.h"
 
 namespace panoptic_mapping {
 
@@ -26,8 +27,12 @@ class SingleTSDFTracker : public IDTrackerBase {
     Submap::Config submap;
 
     // System params.
+    bool use_lidar = true;
+    bool use_range_image = true;
     bool use_detectron = false;
     bool use_instance_classification = false;
+
+    MapRenderer::Config renderer;
 
     Config() { setConfigName("SingleTSDFTracker"); }
 
@@ -55,6 +60,7 @@ class SingleTSDFTracker : public IDTrackerBase {
 
   int map_id_;
   bool is_setup_ = false;
+  MapRenderer renderer_; 
 };
 
 }  // namespace panoptic_mapping

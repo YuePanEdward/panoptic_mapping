@@ -57,4 +57,26 @@ bool LabelHandlerBase::getLabelEntryIfExists(int segmentation_id,
 
 size_t LabelHandlerBase::numberOfLabels() const { return labels_.size(); }
 
+
+bool LabelHandlerBase::assignLabelsSemanticKITTI(Labels& labels)
+{
+  // TODO(py): speed up
+  for (int i=0; i<labels.size(); i++)
+  {
+    auto cur_label = labels_.find(labels[i].id_label);
+    if (cur_label == labels_.end()) // not found, add new entry
+    {
+      LabelEntry new_label;
+      new_label.segmentation_id = labels[i].id_label;
+      new_label.class_id = labels[i].sem_label;
+      
+      // only for semantic kitti dataset
+      semanticKittiLabelLUT(labels[i].sem_label, new_label);
+      
+      labels_[labels[i].id_label] = std::make_unique<LabelEntry>(new_label);
+    }
+  }
+  return true;
+}
+
 }  // namespace panoptic_mapping

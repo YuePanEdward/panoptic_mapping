@@ -33,6 +33,8 @@ void ProjectiveIDTracker::Config::setupParamsAndPrinting() {
   setupParam("min_allocation_size", &min_allocation_size);
   setupParam("rendering_threads", &rendering_threads);
   setupParam("renderer", &renderer);
+  setupParam("vis_render_image", &vis_render_image);
+  setupParam("use_lidar", &use_lidar);
 }
 
 ProjectiveIDTracker::ProjectiveIDTracker(const Config& config,
@@ -40,13 +42,13 @@ ProjectiveIDTracker::ProjectiveIDTracker(const Config& config,
                                          bool print_config)
     : IDTrackerBase(std::move(globals)),
       config_(config.checkValid()),
-      renderer_(config.renderer, globals_->camera()->getConfig(), false) {
+      renderer_(config.renderer, globals_, config.use_lidar, false) {
   LOG_IF(INFO, config_.verbosity >= 1 && print_config) << "\n"
                                                        << config_.toString();
   addRequiredInputs({InputData::InputType::kColorImage,
                      InputData::InputType::kDepthImage,
-                     InputData::InputType::kSegmentationImage,
-                     InputData::InputType::kValidityImage});
+                     InputData::InputType::kSegmentationImage});
+                     
 }
 
 void ProjectiveIDTracker::processInput(SubmapCollection* submaps,
@@ -54,60 +56,83 @@ void ProjectiveIDTracker::processInput(SubmapCollection* submaps,
   CHECK_NOTNULL(submaps);
   CHECK_NOTNULL(input);
   CHECK(inputIsValid(*input));
-  // Visualization.
-  cv::Mat input_vis;
-  std::unique_ptr<Timer> vis_timer;
+  
+  Timer vis_timer("visualization/images");
+  // visualize the input panoptic range image
   if (visualizationIsOn()) {
-    vis_timer = std::make_unique<Timer>("visualization/tracking");
-    Timer timer("visualization/tracking/input_image");
-    input_vis = renderer_.colorIdImage(input->idImage());
-    vis_timer->Pause();
+    // cv::Mat input_vis = renderer_.colorIdImage(input->idImage(), 29); //should be before the processing 
+    cv::Mat input_vis = renderer_.colorPanoImage(input->idImage(), input->colorImage(), 19); //should be before the processing 
+    visualize(input_vis, "input"); //input instance id
+    input_vis.release();
   }
+  vis_timer.Pause();
 
-  // Render all submaps.
+ // Render all submaps.
   Timer timer("tracking");
   auto t0 = std::chrono::high_resolution_clock::now();
-  Timer detail_timer("tracking/compute_tracking_data");
+  Timer com_track_timer("tracking/compute_tracking_data");
   TrackingInfoAggregator tracking_data = computeTrackingData(submaps, input);
+  com_track_timer.Stop();
 
   // Assign the input ids to tracks or allocate new maps.
-  detail_timer = Timer("tracking/match_ids");
   std::unordered_map<int, int> input_to_output;
+  input_to_output[-1] = -1; // for nan pixels
+  
   std::stringstream info;
   int n_matched = 0;
   int n_new = 0;
   Timer alloc_timer("tracking/allocate_submaps");
+  
+  // allocate freespace submap as submap 0
+  freespace_allocator_->allocateSubmap(submaps, input);
   alloc_timer.Pause();
+
+  std::set<int> cur_submap_id_set;
+
+
+  Timer match_timer("tracking/match_ids");
+  // for each input label
   for (const int input_id : tracking_data.getInputIDs()) {
+    
+    match_timer.Unpause();
+    
     int submap_id;
     bool matched = false;
     float value;
     bool any_overlap;
     std::stringstream logging_details;
 
+    // ROS_INFO("Debuging/Track input_id %d", input_id);
+
     // Find matches.
     if (config_.use_class_data_for_matching || config_.verbosity >= 4) {
-      std::vector<std::pair<int, float>> ids_values;
+      std::vector<std::pair<int, float>> ids_values; // <id, iou>
+      //calculate the metric (IOU or overlap ratio) of the submaps
       any_overlap = tracking_data.getAllMetrics(input_id, &ids_values,
                                                 config_.tracking_metric);
+                            
       // Check for classes if requested.
-      if (config_.use_class_data_for_matching) {
+      if (config_.use_class_data_for_matching) { //default: true
         for (const auto& id_value : ids_values) {
           // These are ordered in decreasing overlap metric.
-          if (id_value.second < config_.match_acceptance_threshold) {
+          if (id_value.second < config_.match_acceptance_threshold) { //iou of such label smaller than threshold
             // No more matches possible.
             break;
-          } else if (classesMatch(
-                         input_id,
-                         submaps->getSubmap(id_value.first).getClassID())) {
+          } 
+          // first judge overlapping ratio, and then judge the semantic class consistency
+          if (classesMatch(
+              input_id,
+              submaps->getSubmap(id_value.first).getClassID())) {
             // Found the best match.
             matched = true;
             submap_id = id_value.first;
-            value = id_value.second;
+            value = id_value.second; 
             break;
           }
         }
-      } else if (any_overlap && ids_values.front().second >
+      }
+      // Not check class consistency 
+      else if (any_overlap && ids_values.front().second >
                                     config_.match_acceptance_threshold) {
         // Check only for the highest match.
         matched = true;
@@ -118,44 +143,58 @@ void ProjectiveIDTracker::processInput(SubmapCollection* submaps,
       // Print the matching statistics for all submaps.
       if (config_.verbosity >= 4) {
         logging_details << ". Overlap: ";
-        for (const auto& id_value : ids_values) {
+        for (const auto& id_value : ids_values) { //from large to small
           logging_details << " " << id_value.first << "(" << std::fixed
                           << std::setprecision(2) << id_value.second << ")";
         }
-      } else {
-        logging_details << ". No overlap found.";
       }
-    } else if (tracking_data.getHighestMetric(input_id, &submap_id, &value,
-                                              config_.tracking_metric)) {
-      // Only consider the highest metric candidate.
+      // else {
+      //   logging_details << ". No overlap found.";
+      // }
+    } 
+    else if (tracking_data.getHighestMetric(input_id, &submap_id, &value,
+                                            config_.tracking_metric)) {
+      // Only consider the highest metric candidate., do not consider the class consistency (not used)
       if (value > config_.match_acceptance_threshold) {
         matched = true;
       }
     }
+    match_timer.Pause();
 
     // Allocate new submap if necessary and store tracking info.
     alloc_timer.Unpause();
     bool allocate_new_submap = tracking_data.getNumberOfInputPixels(input_id) >=
-                               config_.min_allocation_size;
+                               config_.min_allocation_size; //number of pixel > threshold, or ignored 
+                               //but if matched, we do not care about this
+    
     if (matched) {
       n_matched++;
       input_to_output[input_id] = submap_id;
-      submaps->getSubmapPtr(submap_id)->setWasTracked(true);
+      cur_submap_id_set.insert(submap_id);
+      submaps->getSubmapPtr(submap_id)->setWasTracked(true); //if there's a match --> tracked
     } else if (allocate_new_submap) {
       n_new++;
       Submap* new_submap = allocateSubmap(input_id, submaps, input);
       if (new_submap) {
         input_to_output[input_id] = new_submap->getID();
+        cur_submap_id_set.insert(new_submap->getID());
+
+        // NOTE(py): Only for debugging, used for semantic kitti dataset
+        if (submaps->getActiveGroundSubmapID() < 0 && 
+            new_submap->getClassID() == 40) // road: semantic kitti class label 40 
+        {
+          submaps->setActiveGroundSubmapID(new_submap->getID()); 
+        }
       } else {
         input_to_output[input_id] = -1;
       }
+      //ROS_INFO("Debuging/Allocate new submap");
     } else {
       // Ignore these.
       input_to_output[input_id] = -1;
     }
-    alloc_timer.Pause();
 
-    // Logging.
+    // Logging.(who match who)
     if (config_.verbosity >= 3) {
       if (matched) {
         info << "\n  " << input_id << "->" << submap_id << " (" << std::fixed
@@ -167,25 +206,28 @@ void ProjectiveIDTracker::processInput(SubmapCollection* submaps,
         } else {
           info << "\n  " << input_id << " [ignored]";
         }
-        if (any_overlap) {
-          info << " (" << std::fixed << std::setprecision(2) << value << ")";
-        }
+        // if (any_overlap) {
+        //   info << " (" << std::fixed << std::setprecision(2) << value << ")";
+        // }
       }
       info << logging_details.str();
     }
-  }
-  detail_timer.Stop();
 
-  // Translate the id image.
+    alloc_timer.Pause();
+  }
+  alloc_timer.Stop();
+  match_timer.Unpause();
+  // Translate the id image. (input_id -> tracked submap id)
   for (auto it = input->idImagePtr()->begin<int>();
-       it != input->idImagePtr()->end<int>(); ++it) {
+       it != input->idImagePtr()->end<int>(); ++it) { // for each pixel
     *it = input_to_output[*it];
   }
+  match_timer.Stop();
+  //ROS_INFO("Debuging/Image translating from input_id to submap_id");
 
-  // Allocate free space map if required.
-  alloc_timer.Unpause();
-  freespace_allocator_->allocateSubmap(submaps, input);
-  alloc_timer.Stop();
+  std::vector<int> cur_submap_id_vec(cur_submap_id_set.begin(), cur_submap_id_set.end()); // set to vector
+  cur_submap_id_vec.push_back(0); // add the free space submap
+  input->setSubmapIDList(cur_submap_id_vec);
 
   // Finish.
   auto t1 = std::chrono::high_resolution_clock::now();
@@ -198,23 +240,49 @@ void ProjectiveIDTracker::processInput(SubmapCollection* submaps,
               << " newly allocated." << info.str();
   }
 
+  vis_timer.Unpause();
   // Publish Visualization if requested.
   if (visualizationIsOn()) {
-    vis_timer->Unpause();
-    Timer timer("visualization/tracking/rendered");
-    if (config_.use_approximate_rendering) {
-      rendered_vis_ = renderer_.colorIdImage(
-          renderer_.renderActiveSubmapIDs(*submaps, input->T_M_C()));
+    // TODO(py): make it more efficient 
+    Timer vis_render_timer("visualization/images/rendered");
+    if (config_.use_approximate_rendering && config_.vis_render_image) {
+       rendered_vis_ = renderer_.colorIdImage(
+          renderer_.renderActiveSubmapIDs(*submaps, input->T_M_C()), 30); //rendered image
     }
-    timer = Timer("visualization/tracking/tracked");
-    cv::Mat tracked_vis = renderer_.colorIdImage(input->idImage());
-    timer.Stop();
-    visualize(input_vis, "input");
-    visualize(rendered_vis_, "rendered");
-    visualize(input->colorImage(), "color");
-    visualize(tracked_vis, "tracked");
-    vis_timer->Stop();
+    vis_render_timer.Stop();
+
+    Timer vis_track_timer("visualization/images/tracked");
+    cv::Mat tracked_vis = renderer_.colorIdImage(input->idImage(), 30);
+
+    float max_depth;
+    if (config_.use_lidar) {
+      max_depth = globals_->lidar()->getConfig().max_range; 
+    } else {
+      max_depth = globals_->camera()->getConfig().max_range; 
+    }
+    cv::Mat depth_vis = renderer_.colorGrayImage(input->depthImage(), max_depth);
+    cv::Mat normal_vis;
+    
+    // visualize image 
+    visualize(input->colorImage(), "color"); //original color
+    visualize(tracked_vis, "tracked"); //tracked submap id
+    visualize(depth_vis, "depth"); // you need to change it also to CV_U8C3, now it's CV_F32C1
+    
+    if (input->has(InputData::InputType::kNormalImage)){
+      normal_vis = renderer_.colorFloatImage(input->normalImage());
+      visualize(normal_vis, "normal"); // you need to change it also to CV_U8C3, now it's CV_F32C3
+    }
+
+    if(config_.vis_render_image)
+      visualize(rendered_vis_, "rendered");  
+
+    tracked_vis.release();
+    depth_vis.release();
+    normal_vis.release();
+
+    vis_track_timer.Stop();
   }
+  vis_timer.Stop();
 }
 
 Submap* ProjectiveIDTracker::allocateSubmap(int input_id,
@@ -235,30 +303,58 @@ bool ProjectiveIDTracker::classesMatch(int input_id, int submap_class_id) {
   return globals_->labelHandler()->getClassID(input_id) == submap_class_id;
 }
 
+// important
 TrackingInfoAggregator ProjectiveIDTracker::computeTrackingData(
     SubmapCollection* submaps, InputData* input) {
   // Render each active submap in parallel to collect overlap statistics.
-  SubmapIndexGetter index_getter(
-      globals_->camera()->findVisibleSubmapIDs(*submaps, input->T_M_C()));
+
+  // Find current submaps that are in the FOV
+  std::vector<int> submap_ids;
+  if (config_.use_lidar) {
+    submap_ids = globals_->lidar()->findVisibleSubmapIDs(*submaps, input->T_M_C()); //also include inactive submap
+  } else {
+    submap_ids = globals_->camera()->findVisibleSubmapIDs(*submaps, input->T_M_C());
+  }
+
+  if (config_.verbosity > 4)
+    ROS_INFO("found %d visible submaps", submap_ids.size());
+
+  SubmapIndexGetter index_getter(submap_ids);
+      
   std::vector<std::future<std::vector<TrackingInfo>>> threads;
   TrackingInfoAggregator tracking_data;
+  // In parallel processing
   for (int i = 0; i < config_.rendering_threads; ++i) {
     threads.emplace_back(std::async(
         std::launch::async,
         [this, i, &tracking_data, &index_getter, submaps,
          input]() -> std::vector<TrackingInfo> {
-          // Also process the input image.
+          // Also process the input image. 
           if (i == 0) {
-            tracking_data.insertInputImage(
-                input->idImage(), input->depthImage(),
+            if (config_.use_lidar){
+              tracking_data.insertInputImage(
+                input->idImage(), input->depthImage(), //what actually needed is the idImage and depthImage
+                globals_->lidar()->getConfig(), config_.rendering_subsampling);
+            }
+            else{
+              tracking_data.insertInputImage(
+                input->idImage(), input->depthImage(), 
                 globals_->camera()->getConfig(), config_.rendering_subsampling);
+            }
           }
           std::vector<TrackingInfo> result;
           int index;
+          // render the exsited submaps
           while (index_getter.getNextIndex(&index)) {
-            if (config_.use_approximate_rendering) {
-              result.emplace_back(this->renderTrackingInfoApproximate(
-                  submaps->getSubmap(index), *input));
+            if (config_.use_approximate_rendering) { //default: true
+              if(config_.use_lidar){
+                result.emplace_back(this->renderTrackingInfoApproximateLidar(
+                    submaps->getSubmap(index), *input));
+              }
+              else{
+                result.emplace_back(this->renderTrackingInfoApproximateCamera(
+                    submaps->getSubmap(index), *input));
+              }
             } else {
               result.emplace_back(this->renderTrackingInfoVertices(
                   submaps->getSubmap(index), *input));
@@ -276,14 +372,22 @@ TrackingInfoAggregator ProjectiveIDTracker::computeTrackingData(
     }
   }
   tracking_data.insertTrackingInfos(infos);
+  
+  if (config_.verbosity > 4)
+    ROS_INFO("tracking info count: %d", infos.size());
 
   // Render the data if required.
   if (visualizationIsOn() && !config_.use_approximate_rendering) {
     Timer timer("visualization/tracking/rendered");
-    cv::Mat vis =
-        cv::Mat::ones(globals_->camera()->getConfig().height,
-                      globals_->camera()->getConfig().width, CV_32SC1) *
-        -1;
+    cv::Mat vis;
+    if (config_.use_lidar){
+      vis = cv::Mat::ones(globals_->lidar()->getConfig().height,
+                          globals_->lidar()->getConfig().width, CV_32SC1) * -1;   
+    }
+    else{
+      vis = cv::Mat::ones(globals_->camera()->getConfig().height,
+                          globals_->camera()->getConfig().width, CV_32SC1) * -1; 
+    }   
     for (const TrackingInfo& info : infos) {
       for (const Eigen::Vector2i& point : info.getPoints()) {
         vis.at<int>(point.y(), point.x()) = info.getSubmapID();
@@ -294,7 +398,8 @@ TrackingInfoAggregator ProjectiveIDTracker::computeTrackingData(
   return tracking_data;
 }
 
-TrackingInfo ProjectiveIDTracker::renderTrackingInfoApproximate(
+//render the already built submap in current view
+TrackingInfo ProjectiveIDTracker::renderTrackingInfoApproximateCamera(
     const Submap& submap, const InputData& input) const {
   // Approximate rendering by projecting the surface points of the submap into
   // the camera and fill in a patch of the size a voxel has (since there is 1
@@ -346,6 +451,76 @@ TrackingInfo ProjectiveIDTracker::renderTrackingInfoApproximate(
   return result;
 }
 
+TrackingInfo ProjectiveIDTracker::renderTrackingInfoApproximateLidar(
+    const Submap& submap, const InputData& input) const {
+  // Approximate rendering by projecting the surface points of the submap into
+  // the camera and fill in a patch of the size that a voxel has (since there is 1
+  // vertex per voxel). 
+  // Render only those mesh vertex points
+
+  // Setup.
+  const Lidar& lidar = *globals_->lidar();
+
+  TrackingInfo result(submap.getID(), lidar.getConfig());
+
+  const Transformation T_C_S = input.T_M_C().inverse() * submap.getT_M_S();
+  
+  const float size_factor =
+      submap.getTsdfLayer().voxel_size() / 2.f;
+
+  const float block_size = submap.getTsdfLayer().block_size();
+  
+  const FloatingPoint block_diag_half = std::sqrt(3.0f) * block_size / 2.0f;
+  const float depth_tolerance = //depth difference threshold for the input image and the rendered image
+      config_.depth_tolerance > 0
+          ? config_.depth_tolerance
+          : -config_.depth_tolerance * submap.getTsdfLayer().voxel_size(); //here, voxel_size
+  const cv::Mat& depth_image = input.depthImage();
+
+  // Parse all blocks.
+  voxblox::BlockIndexList index_list;
+  submap.getMeshLayer().getAllAllocatedMeshes(&index_list);
+  //ROS_INFO("submap_id: %d, #render_block: %d", submap.getID(), index_list.size());
+
+  //each block have lots of vertices
+  for (const voxblox::BlockIndex& index : index_list) {
+    if (!lidar.blockIsInViewFrustum(submap, index, T_C_S, block_size,
+                                    block_diag_half)) { 
+      continue;
+    }
+    for (const Point& vertex :
+         submap.getMeshLayer().getMeshByIndex(index).vertices) {
+      // Project vertex and check depth value.
+      const Point p_C = T_C_S * vertex;
+      float p_C_depth = p_C.norm();
+      //ROS_INFO("render point: (%f, %f, %f)", p_C(0), p_C(1), p_C(2));
+      
+      int u, v;
+      if (lidar.projectPointToImagePlane(p_C, &u, &v) < 0.0) { //failed
+        continue;
+      }
+      float depth = depth_image.at<float>(v, u);
+      if (depth < 0.0 || 
+          std::abs(depth - p_C_depth) >= depth_tolerance) {
+        continue; //inconsistent depth 
+      }
+
+      float ang_unit_rad = size_factor / depth;
+
+      // Compensate for vertex sparsity. (how large should these be)
+      const int size_x = std::ceil(ang_unit_rad / (2.0 * M_PI) * lidar.getConfig().width);
+      const int size_y = std::ceil(ang_unit_rad / (lidar.getConfig().fov_rad) * lidar.getConfig().height);
+      //ROS_INFO("size_x: %d, size_y: %d", size_x, size_y);
+
+      result.insertRenderedPoint(u, v, size_x, size_y);
+    }
+  }
+  // calculate
+  result.evaluate(input.idImage(), depth_image); 
+  return result;
+}
+
+//TODO(py): also add two options for camera and lidar separately for this function
 TrackingInfo ProjectiveIDTracker::renderTrackingInfoVertices(
     const Submap& submap, const InputData& input) const {
   TrackingInfo result(submap.getID());

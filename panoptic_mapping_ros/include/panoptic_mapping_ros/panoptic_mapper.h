@@ -18,16 +18,21 @@
 #include <panoptic_mapping/tools/data_writer_base.h>
 #include <panoptic_mapping/tools/planning_interface.h>
 #include <panoptic_mapping/tools/thread_safe_submap_collection.h>
+// #include "panoptic_mapping/tools/map_evaluator.h"
 #include <panoptic_mapping/tracking/id_tracker_base.h>
 #include <panoptic_mapping_msgs/SaveLoadMap.h>
 #include <panoptic_mapping_msgs/SetVisualizationMode.h>
 #include <ros/ros.h>
 #include <std_srvs/Empty.h>
 
+#include "panoptic_mapping_ros/conversions/conversions.h"
 #include "panoptic_mapping_ros/input/input_synchronizer.h"
+#include "panoptic_mapping_ros/transformer/transformer.h"
 #include "panoptic_mapping_ros/visualization/planning_visualizer.h"
 #include "panoptic_mapping_ros/visualization/submap_visualizer.h"
 #include "panoptic_mapping_ros/visualization/tracking_visualizer.h"
+
+
 
 namespace panoptic_mapping {
 
@@ -38,15 +43,17 @@ class PanopticMapper {
     int verbosity = 2;
 
     // Frame name used for the global frame (often mission, world, or odom).
-    std::string global_frame_name = "mission";
+    std::string global_frame_name = "mission"; // "world"
 
     // How frequently to perform tasks. Execution period in seconds. Use -1 for
     // every frame, 0 for never.
     float visualization_interval = -1.f;
     float data_logging_interval = 0.f;
     float print_timing_interval = 0.f;
+    float esdf_update_interval = 0.f;
 
-    // If true maintain and update the threadsafe submap collection for access.
+    // If true maintain and update the threadsafe submap collection for access 
+    // NOTE(py): used for save the updated map? however, it's quite time-consuming
     bool use_threadsafe_submap_collection = false;
 
     // Number of threads used for ROS spinning.
@@ -73,6 +80,24 @@ class PanopticMapper {
     // If true, indicate the default values when printing component configs.
     bool indicate_default_values = true;
 
+    // import the input data from rosbag or not.
+    bool input_from_bag = true;
+
+    // input sensor is lidar or depth camera
+    bool use_lidar = true;
+
+    // if the input is the point cloud, firstly convert it to the range image
+    bool use_range_image = true;
+
+    // estimate normal for each frame
+    bool estimate_normal = true;
+
+    // filter moving objects or not
+    bool filter_moving_objects = false;
+
+    // assign different color to different instance for foreground objects 
+    bool use_panoptic_color = true;
+
     Config() { setConfigName("PanopticMapper"); }
 
    protected:
@@ -90,6 +115,7 @@ class PanopticMapper {
   void dataLoggingCallback(const ros::TimerEvent&);
   void printTimingsCallback(const ros::TimerEvent&);
   void inputCallback(const ros::TimerEvent&);
+  void updateFreeEsdfCallback(const ros::TimerEvent&);
 
   // Services.
   bool saveMapCallback(
@@ -98,14 +124,26 @@ class PanopticMapper {
   bool loadMapCallback(
       panoptic_mapping_msgs::SaveLoadMap::Request& request,     // NOLINT
       panoptic_mapping_msgs::SaveLoadMap::Response& response);  // NOLINT
+  bool saveMeshCallback(
+      panoptic_mapping_msgs::SaveLoadMap::Request& request,     // NOLINT
+      panoptic_mapping_msgs::SaveLoadMap::Response& response);  // NOLINT
+  bool saveFreeEsdfCallback(
+      panoptic_mapping_msgs::SaveLoadMap::Request& request,     // NOLINT
+      panoptic_mapping_msgs::SaveLoadMap::Response& response);  // NOLINT
   bool setVisualizationModeCallback(
-      panoptic_mapping_msgs::SetVisualizationMode::Request& request,  // NOLINT
-      panoptic_mapping_msgs::SetVisualizationMode::Response&          // NOLINT
-          response);
+      panoptic_mapping_msgs::SetVisualizationMode::Request& request,    // NOLINT
+      panoptic_mapping_msgs::SetVisualizationMode::Response& response); // NOLINT
+         
   bool printTimingsCallback(std_srvs::Empty::Request& request,      // NOLINT
                             std_srvs::Empty::Response& response);   // NOLINT
   bool finishMappingCallback(std_srvs::Empty::Request& request,     // NOLINT
                              std_srvs::Empty::Response& response);  // NOLINT
+
+  void insertPointcloud(const sensor_msgs::PointCloud2::Ptr& pointcloud);
+
+  // void integratePointcloud(const Transformation& T_G_C,
+  //                          const Pointcloud& ptcloud_C, const Colors& colors,
+  //                          const bool is_freespace_pointcloud = false);
 
   // Processing.
   // Integrate a set of input images. The input is usually gathered from ROS
@@ -116,9 +154,37 @@ class PanopticMapper {
   // NOTE(schmluk): This is currently a preliminary tool to play around with.
   void finishMapping();
 
+  // ESDF mapping
+  /// Call this to update the ESDF based on latest state of the occupancy map,
+  /// considering only the newly updated parts of the occupancy map (checked
+  /// with the ESDF updated bit in Update::Status).
+  // void updateFreeEsdfFromOcc();
+
+  /// Call this to update the Occupancy map based on latest state of the TSDF
+  /// map
+  void updateFreeOccFromTsdf();
+
+  void updateFreeEsdfFromTsdf();
+
+  void updateNonFreeOccFromTsdf();
+
+  /**
+   * Gets the next pointcloud that has an available transform to process from
+   * the queue.
+   */
+  bool getNextPointcloudFromQueue(
+      std::queue<sensor_msgs::PointCloud2::Ptr>* queue,
+      sensor_msgs::PointCloud2::Ptr* pointcloud_msg, Transformation* T_G_C);
+
+  virtual void processPointCloudMessageAndInsert(
+      const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
+      const Transformation& T_G_C, const bool is_freespace_pointcloud);
+
   // IO.
   bool saveMap(const std::string& file_path);
   bool loadMap(const std::string& file_path);
+  bool saveMesh(const std::string& file_path);
+  bool saveFreeEsdf(const std::string& file_path);
 
   // Utilities.
   // Print all timings (from voxblox::timing) to console.
@@ -150,19 +216,32 @@ class PanopticMapper {
   ros::NodeHandle nh_private_;
 
   // Subscribers, Publishers, Services, Timers.
+  ros::Subscriber pointcloud_sub_;
+  ros::Subscriber transform_sub_;
+  ros::Publisher transform_pub_;
   ros::ServiceServer load_map_srv_;
   ros::ServiceServer save_map_srv_;
   ros::ServiceServer set_visualization_mode_srv_;
   ros::ServiceServer set_color_mode_srv_;
   ros::ServiceServer print_timings_srv_;
   ros::ServiceServer finish_mapping_srv_;
+  ros::ServiceServer save_mesh_srv_;
+  ros::ServiceServer save_free_esdf_srv_;
+  ros::ServiceServer evaluate_map_srv_;
   ros::Timer visualization_timer_;
   ros::Timer data_logging_timer_;
   ros::Timer print_timing_timer_;
+  ros::Timer update_esdf_timer_;
   ros::Timer input_timer_;
 
   // Members.
   const Config config_;
+
+  /**
+   * Global/map coordinate frame. Will always look up TF transforms to this
+   * frame.
+   */
+  //std::string world_frame_; // we use global_frame_name here
 
   // Map.
   std::shared_ptr<SubmapCollection> submaps_;
@@ -178,11 +257,16 @@ class PanopticMapper {
   std::unique_ptr<InputSynchronizer> input_synchronizer_;
   std::unique_ptr<DataWriterBase> data_logger_;
   std::shared_ptr<PlanningInterface> planning_interface_;
+  std::shared_ptr<Transformer> transformer_;
+  // std::shared_ptr<MapEvaluator> map_evaluator_;
 
   // Visualization.
   std::unique_ptr<SubmapVisualizer> submap_visualizer_;
   std::unique_ptr<PlanningVisualizer> planning_visualizer_;
-  std::unique_ptr<TrackingVisualizer> tracking_visualizer_;
+  std::unique_ptr<TrackingVisualizer> tracking_visualizer_; //NOTE(py): seems to be not used
+
+  // Colormap to use for intensity pointclouds.
+  std::shared_ptr<ColorMap> color_map_;
 
   // Which processing to perform.
   bool compute_vertex_map_ = false;
@@ -198,6 +282,20 @@ class PanopticMapper {
   static const std::map<std::string, std::pair<std::string, std::string>>
       default_names_and_types_;
   ros::NodeHandle defaultNh(const std::string& key) const;
+
+  // Last message times for throttling input.
+  ros::Time last_msg_time_ptcloud_;
+
+  /**
+   * Queue of incoming pointclouds, in case the transforms can't be immediately
+   * resolved.
+   */
+  std::queue<sensor_msgs::PointCloud2::Ptr> pointcloud_queue_;
+
+  /// Will throttle to this message rate.
+  ros::Duration min_time_between_msgs_;
+
+  int frame_count_ = 0;
 };
 
 }  // namespace panoptic_mapping

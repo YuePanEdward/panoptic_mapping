@@ -1,5 +1,5 @@
-#ifndef PANOPTIC_MAPPING_INTEGRATION_SINGLE_TSDF_INTEGRATOR_H_
-#define PANOPTIC_MAPPING_INTEGRATION_SINGLE_TSDF_INTEGRATOR_H_
+#ifndef PANOPTIC_MAPPING_INTEGRATION_SINGLE_PROJECTIVE_TSDF_INTEGRATOR_H_
+#define PANOPTIC_MAPPING_INTEGRATION_SINGLE_PROJECTIVE_TSDF_INTEGRATOR_H_
 
 #include <memory>
 #include <string>
@@ -18,13 +18,13 @@ namespace panoptic_mapping {
  * @brief Integrator that integrates all data into a single submap to emulate a
  * monolithic approach. Combine this module with the SingleTsdfIDTracker.
  */
-class SingleTsdfIntegrator : public ProjectiveIntegrator {
+class SingleProjectiveIntegrator : public ProjectiveIntegrator {
  public:
   struct Config : public config_utilities::Config<Config> {
     int verbosity = 4;
 
     // Standard integrator params.
-    ProjectiveIntegrator::Config projective_integrator;
+    ProjectiveIntegrator::Config pi_config;
 
     // If true require a color image and update voxel colors.
     bool use_color = true;
@@ -40,15 +40,15 @@ class SingleTsdfIntegrator : public ProjectiveIntegrator {
     // 'use_uncertainty' is true.
     float uncertainty_decay_rate = 0.5f;
 
-    Config() { setConfigName("SingleTsdfIntegrator"); }
+    Config() { setConfigName("SingleProjectiveIntegrator"); }
 
    protected:
     void setupParamsAndPrinting() override;
     void checkParams() const override;
   };
 
-  SingleTsdfIntegrator(const Config& config, std::shared_ptr<Globals> globals);
-  ~SingleTsdfIntegrator() override = default;
+  SingleProjectiveIntegrator(const Config& config, std::shared_ptr<Globals> globals);
+  ~SingleProjectiveIntegrator() override = default;
 
   void processInput(SubmapCollection* submaps, InputData* input) override;
 
@@ -64,13 +64,14 @@ class SingleTsdfIntegrator : public ProjectiveIntegrator {
   bool updateVoxel(InterpolatorBase* interpolator, TsdfVoxel* voxel,
                    const Point& p_C, const InputData& input,
                    const int submap_id, const bool is_free_space_submap,
+                   const bool apply_normal_refine, const Transformation& T_C_S,
                    const float truncation_distance, const float voxel_size,
                    ClassVoxel* class_voxel = nullptr) const override;
 
  private:
   const Config config_;
   static config_utilities::Factory::RegistrationRos<
-      TsdfIntegratorBase, SingleTsdfIntegrator, std::shared_ptr<Globals>>
+      TsdfIntegratorBase, SingleProjectiveIntegrator, std::shared_ptr<Globals>>
       registration_;
 
   void updateClassVoxel(InterpolatorBase* interpolator, const InputData& input,
@@ -79,8 +80,10 @@ class SingleTsdfIntegrator : public ProjectiveIntegrator {
   void updateUncertaintyVoxel(InterpolatorBase* interpolator,
                               const InputData& input,
                               UncertaintyVoxel* class_voxel) const;
+
+  int num_classes_;
 };
 
 }  // namespace panoptic_mapping
 
-#endif  // PANOPTIC_MAPPING_INTEGRATION_SINGLE_TSDF_INTEGRATOR_H_
+#endif  // PANOPTIC_MAPPING_INTEGRATION_SINGLE_PROJECTIVE_TSDF_INTEGRATOR_H_

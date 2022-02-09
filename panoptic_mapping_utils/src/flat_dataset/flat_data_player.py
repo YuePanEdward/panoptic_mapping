@@ -1,4 +1,6 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2
+
+# dirty fix, may try to switch to python3
 
 import os
 import json

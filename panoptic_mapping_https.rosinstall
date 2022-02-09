@@ -37,10 +37,11 @@
     uri: https://github.com/CogRob/catkin_grpc.git
     
 # Package Dependencies. Notice that voxblox requires a special branch.
+# Use my own fork of voxblox here
 - git:
     local-name: voxblox
-    uri: https://github.com/ethz-asl/voxblox.git
-    version: 'devel/panoptic_mapping'
+    uri: https://github.com/YuePanEdward/voxblox.git
+    version: 'devel/voxfield'
 - git:
     local-name: cblox
     uri: https://github.com/ethz-asl/cblox.git

@@ -1,0 +1,27 @@
+# TODO: better to merge esdf map into the panmap file
+
+# cow & lady dataset
+# ground_truth_pointcloud_file: /media/yuepan/SeagateNew/1_data/thesis_dataset/cow_lady_gt/cow_and_lady_gt.ply
+# map_file: /media/yuepan/SeagateNew/1_data/thesis_dataset/cow_dataset/results/mono_5cm_proj.panmap
+# esdf_file_path: /media/yuepan/SeagateNew/1_data/thesis_dataset/cow_dataset/results/mono_5cm_voxblox_proj.esdf
+
+# flat dataset
+# ground_truth_pointcloud_file: /media/yuepan/SeagateNew/1_data/thesis_dataset/flat_dataset/flat_1_gt_10000.ply
+# map_file: /media/yuepan/SeagateNew/1_data/thesis_dataset/flat_dataset/results/mono_10cm_normal_test.panmap
+# esdf_file_path: /media/yuepan/SeagateNew/1_data/thesis_dataset/flat_dataset/results/mono_10cm_voxfield_refine_test.esdf
+
+# mai city dataset
+ground_truth_pointcloud_file: /media/yuepan/SeagateNew/1_data/mai_city/gt_models/merged_gt_map.ply
+map_file: /media/yuepan/SeagateNew/1_data/mai_city/results/mono_40cm_merged_nonormal_test01.panmap
+esdf_file_path: /media/yuepan/SeagateNew/1_data/mai_city/results/mono_40cm_voxblox.esdf
+
+verbosity: 2
+trunc_dist: -2.0
+color_by_mesh_distance: true
+ignore_truncated_points: true
+is_single_tsdf: true
+include_all_submaps: true
+use_chamfer_dist: true
+visualize_esdf_error: true
+vis_occ_esdf_error: true
+

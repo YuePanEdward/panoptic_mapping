@@ -10,6 +10,8 @@
 #include "panoptic_mapping/map/submap.h"
 #include "panoptic_mapping/map/submap_collection.h"
 
+// TODO(py): study and improve this class
+
 namespace panoptic_mapping {
 
 /**
@@ -87,8 +89,8 @@ class TsdfRegistrator {
   float computeCombinedWeight(float w1, float w2) const;
 
   // For parallel change detection.
-  std::string checkSubmapForChange(const SubmapCollection& submaps,
-                                   Submap* submap) const;
+  void checkSubmapForChange(const SubmapCollection& submaps,
+                            Submap* submap) const;
 };
 
 }  // namespace panoptic_mapping

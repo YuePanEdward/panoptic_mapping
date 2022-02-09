@@ -36,7 +36,6 @@ class InputSynchronizer : public InputSynchronizerBase {
         "";  // Empty (default) take the frame of the depth message header.
     float transform_lookup_time =
         0.1f;  // s, Maximum time to wait for transforms.
-    double max_delay = 0.0; // s, Maximum delay between Image messages that should be synced
 
     Config() { setConfigName("InputSynchronizer"); }
 
@@ -105,6 +104,13 @@ class InputSynchronizer : public InputSynchronizerBase {
         extraction_function, this));
   }
 
+  bool getDataInQueue(const ros::Time& timestamp,
+                      InputSynchronizerData** data) override;
+
+  bool allocateDataInQueue(const ros::Time& timestamp);
+
+  void checkDataIsReady(InputSynchronizerData* data) override;
+
   /**
    * @brief Try to lookup the specified transform from tf.
    *
@@ -118,13 +124,6 @@ class InputSynchronizer : public InputSynchronizerBase {
                        const std::string& base_frame,
                        const std::string& child_frame,
                        Transformation* transformation) const;
-
-  bool getDataInQueue(const ros::Time& timestamp,
-                      InputSynchronizerData** data) override;
-
-  bool allocateDataInQueue(const ros::Time& timestamp);
-
-  void checkDataIsReady(InputSynchronizerData* data) override;
 
  private:
   template <typename T>

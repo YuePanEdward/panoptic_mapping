@@ -39,6 +39,9 @@ class MapManager : public MapManagerBase {
     // the loss of classification information.
     bool apply_class_layer_when_deactivating_submaps = false;
 
+    // Number of threads used to perform submap-wise operation. 
+    int integration_threads = std::thread::hardware_concurrency();
+
     // Member configs.
     TsdfRegistrator::Config tsdf_registrator_config;
     ActivityManager::Config activity_manager_config;
@@ -68,7 +71,7 @@ class MapManager : public MapManagerBase {
                              int* merged_id = nullptr);
 
  protected:
-  std::string pruneBlocks(Submap* submap) const;
+  void pruneBlocks(Submap* submap) const;
 
  private:
   static config_utilities::Factory::RegistrationRos<MapManagerBase, MapManager>

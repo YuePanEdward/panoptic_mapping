@@ -12,7 +12,6 @@
 #include "panoptic_mapping/3rd_party/config_utilities.hpp"
 #include "panoptic_mapping/common/camera.h"
 #include "panoptic_mapping/labels/label_handler_base.h"
-#include "panoptic_mapping/map/classification/class_layer.h"
 #include "panoptic_mapping/tools/map_renderer.h"
 #include "panoptic_mapping/tracking/id_tracker_base.h"
 #include "panoptic_mapping/tracking/tracking_info.h"
@@ -30,13 +29,13 @@ class ProjectiveIDTracker : public IDTrackerBase {
 
     // Count iso-surfaces points as valid whose projected depth is within this
     // distance in meters of the measured depth. Negative values indicate
-    // multiples of the voxel size.
+    // multiples of the voxel size. (so smart)
     float depth_tolerance = -1.0;
 
     // Which tracking metric to compute. Supported are 'IoU' and 'overlap'.
     std::string tracking_metric = "IoU";
 
-    // Accept matches that have at least this value in the computed trackign
+    // Accept matches that have at least this value in the computed tracking
     // metric.
     float match_acceptance_threshold = 0.5;
 
@@ -58,6 +57,10 @@ class ProjectiveIDTracker : public IDTrackerBase {
 
     // Number of threads to use to track submaps in parallel.
     int rendering_threads = std::thread::hardware_concurrency();
+
+    bool vis_render_image = false;
+
+    bool use_lidar = true;
 
     // Renderer settings. The renderer is only used for visualization purposes.
     MapRenderer::Config renderer;
@@ -85,8 +88,11 @@ class ProjectiveIDTracker : public IDTrackerBase {
   TrackingInfo renderTrackingInfo(const Submap& submap,
                                   const InputData& input) const;
 
-  TrackingInfo renderTrackingInfoApproximate(const Submap& submap,
-                                             const InputData& input) const;
+  TrackingInfo renderTrackingInfoApproximateCamera(const Submap& submap,
+                                                   const InputData& input) const;
+
+  TrackingInfo renderTrackingInfoApproximateLidar(const Submap& submap,
+                                                  const InputData& input) const;
 
   TrackingInfo renderTrackingInfoVertices(const Submap& submap,
                                           const InputData& input) const;

@@ -7,9 +7,13 @@
 #include <unordered_set>
 #include <vector>
 
+#include <ros/ros.h>
+
 #include "panoptic_mapping/3rd_party/config_utilities.hpp"
 #include "panoptic_mapping/common/common.h"
 #include "panoptic_mapping/map/submap.h"
+
+#include <voxblox/io/mesh_ply.h>
 
 namespace panoptic_mapping {
 
@@ -43,6 +47,9 @@ class SubmapCollection {
    * @return True if the map was loaded successfully.
    */
   bool loadFromFile(const std::string& file_path, bool recompute_data = true);
+
+  // TODO(py): add comment
+  bool saveMeshToFile(const std::string& file_path) const;
 
   // Modifying the collection.
   /**
@@ -94,7 +101,11 @@ class SubmapCollection {
    */
   Submap* getSubmapPtr(int id);
 
+  // Getter.
   int getActiveFreeSpaceSubmapID() const { return active_freespace_submap_id_; }
+
+  int getActiveGroundSubmapID() const { return active_ground_submap_id_; }
+  
   const std::unordered_map<int, std::unordered_set<int>>&
   getInstanceToSubmapIDTable() const {
     return instance_to_submap_ids_;
@@ -102,6 +113,8 @@ class SubmapCollection {
 
   // Setters.
   void setActiveFreeSpaceSubmapID(int id) { active_freespace_submap_id_ = id; }
+
+  void setActiveGroundSubmapID(int id) { active_ground_submap_id_ = id; }
 
   // Tools.
 
@@ -137,9 +150,10 @@ class SubmapCollection {
   std::vector<std::unique_ptr<Submap>> submaps_;
 
   // Bookkeeping.
-  std::unordered_map<int, size_t> id_to_index_;
+  std::unordered_map<int, size_t> id_to_index_; // <submap id, index in the submap vector>
   std::unordered_map<int, std::unordered_set<int>> instance_to_submap_ids_;
   int active_freespace_submap_id_ = -1;
+  int active_ground_submap_id_ = -1; //NOTE(py): added for debugging
 
  public:
   // Iterators over submaps.

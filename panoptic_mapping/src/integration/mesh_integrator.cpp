@@ -19,7 +19,7 @@ void MeshIntegrator::Config::checkParams() const {
   checkParamGT(min_weight, 0.f, "min_weight");
   checkParamGE(required_belonging_corners, 0, "required_belonging_corners");
   checkParamLE(required_belonging_corners, 8, "required_belonging_corners");
-  checkParamGT(integrator_threads, 0, "integrator_threads");
+  checkParamGT(integration_threads, 0, "integration_threads");
 }
 
 void MeshIntegrator::Config::setupParamsAndPrinting() {
@@ -27,7 +27,7 @@ void MeshIntegrator::Config::setupParamsAndPrinting() {
   setupParam("min_weight", &min_weight);
   setupParam("required_belonging_corners", &required_belonging_corners);
   setupParam("clear_foreign_voxels", &clear_foreign_voxels);
-  setupParam("integrator_threads", &integrator_threads);
+  setupParam("integration_threads", &integration_threads);
 }
 
 MeshIntegrator::MeshIntegrator(const MeshIntegrator::Config& config,
@@ -72,13 +72,14 @@ MeshIntegrator::MeshIntegrator(const MeshIntegrator::Config& config,
       0, 0, 1, 1, 1, 1;
 }
 
+// already multi-thread
 void MeshIntegrator::generateMesh(bool only_mesh_updated_blocks,
                                   bool clear_updated_flag,
                                   bool use_class_data) {
   use_class_layer_ = use_class_data;
   if (!class_layer_ && use_class_layer_) {
     use_class_layer_ = false;
-    LOG(WARNING) << "Tried to use un-initialized class layer, will be ignored.";
+    // LOG(WARNING) << "Tried to use un-initialized class layer, will be ignored."; // TODO(py): figure why there's such kind of error !!!
   }
   voxblox::BlockIndexList tsdf_blocks;
   if (only_mesh_updated_blocks) {
@@ -97,7 +98,7 @@ void MeshIntegrator::generateMesh(bool only_mesh_updated_blocks,
       new voxblox::MixedThreadSafeIndex(tsdf_blocks.size()));
 
   std::list<std::thread> integration_threads;
-  for (size_t i = 0; i < config_.integrator_threads; ++i) {
+  for (size_t i = 0; i < config_.integration_threads; ++i) {
     integration_threads.emplace_back(
         &MeshIntegrator::generateMeshBlocksFunction, this, tsdf_blocks,
         clear_updated_flag, index_getter.get());

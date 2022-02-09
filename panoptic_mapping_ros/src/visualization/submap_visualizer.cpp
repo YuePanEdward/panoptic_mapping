@@ -11,7 +11,7 @@
 
 namespace panoptic_mapping {
 
-const Color SubmapVisualizer::kUnknownColor_(50, 50, 50);
+const Color SubmapVisualizer::kUnknownColor_(70, 70, 70);
 
 config_utilities::Factory::RegistrationRos<SubmapVisualizer, SubmapVisualizer,
                                            std::shared_ptr<Globals>>
@@ -30,9 +30,21 @@ void SubmapVisualizer::Config::setupParamsAndPrinting() {
   setupParam("submap_color_discretization", &submap_color_discretization);
   setupParam("visualize_mesh", &visualize_mesh);
   setupParam("visualize_tsdf_blocks", &visualize_tsdf_blocks);
-  setupParam("visualize_free_space", &visualize_free_space);
+  setupParam("visualize_occ_voxels", &visualize_occ_voxels);
+  setupParam("visualize_slice", &visualize_slice);
+  setupParam("visualize_free_space_tsdf", &visualize_free_space_tsdf);
+  setupParam("visualize_free_space_esdf", &visualize_free_space_esdf);
+  setupParam("visualize_free_space_gsdf", &visualize_free_space_gsdf);
+  setupParam("visualize_free_space_esdf_error", &visualize_free_space_esdf_error);
+  setupParam("visualize_ground_tsdf", &visualize_ground_tsdf);
   setupParam("visualize_bounding_volumes", &visualize_bounding_volumes);
   setupParam("include_free_space", &include_free_space);
+  setupParam("slice_height", &slice_height);
+  setupParam("occ_voxel_size_ratio", &occ_voxel_size_ratio);
+  setupParam("tsdf_min_weight", &tsdf_min_weight);
+  setupParam("alpha_occ", &alpha_occ);
+  setupParam("alpha_block", &alpha_block);
+  setupParam("alpha_bounding", &alpha_bounding);
 }
 
 void SubmapVisualizer::Config::printFields() const {
@@ -58,9 +70,25 @@ SubmapVisualizer::SubmapVisualizer(const Config& config,
 
   // Setup publishers.
   nh_ = ros::NodeHandle(config_.ros_namespace);
-  if (config_.visualize_free_space) {
-    freespace_pub_ =
+  if (config_.visualize_free_space_tsdf) {
+    freespace_tsdf_pub_ =
         nh_.advertise<pcl::PointCloud<pcl::PointXYZI>>("free_space_tsdf", 100);
+  }
+  if (config_.visualize_free_space_esdf) {
+    freespace_esdf_pub_ =
+        nh_.advertise<pcl::PointCloud<pcl::PointXYZI>>("free_space_esdf", 100);
+  }
+  if (config_.visualize_free_space_gsdf) {
+    freespace_gsdf_pub_ =
+        nh_.advertise<pcl::PointCloud<pcl::PointXYZI>>("free_space_gsdf", 100);
+  }
+  if (config_.visualize_free_space_esdf_error) {
+    freespace_esdf_error_pub_ =
+        nh_.advertise<pcl::PointCloud<pcl::PointXYZRGB>>("free_space_esdf_error", 100);
+  }
+  if (config_.visualize_ground_tsdf) {
+    ground_tsdf_pub_ =
+        nh_.advertise<pcl::PointCloud<pcl::PointXYZI>>("ground_tsdf", 100);
   }
   if (config_.visualize_mesh) {
     mesh_pub_ = nh_.advertise<voxblox_msgs::MultiMesh>("mesh", 1000);
@@ -72,6 +100,10 @@ SubmapVisualizer::SubmapVisualizer(const Config& config,
   if (config_.visualize_bounding_volumes) {
     bounding_volume_pub_ =
         nh_.advertise<visualization_msgs::MarkerArray>("bounding_volumes", 100);
+  }
+  if (config_.visualize_occ_voxels) {
+    occ_voxels_pub_ =
+        nh_.advertise<visualization_msgs::MarkerArray>("occ_voxels", 100);
   }
 }
 
@@ -96,13 +128,26 @@ void SubmapVisualizer::clearMesh() {
 }
 
 void SubmapVisualizer::visualizeAll(SubmapCollection* submaps) {
+  
+  Timer update_vis("visualization/update_info");
   publishTfTransforms(*submaps);
   updateVisInfos(*submaps);
   vis_infos_are_updated_ = true;  // Prevent repeated updates.
+  update_vis.Stop();
+  Timer mesh_vis("visualization/mesh"); // most of the time is consumed here
   visualizeMeshes(submaps);
+  mesh_vis.Stop();
+  Timer occ_vis("visualization/occ");
+  visualizeOccupiedVoxels(*submaps);
+  occ_vis.Stop();
+  Timer other_vis("visualization/others");
   visualizeTsdfBlocks(*submaps);
-  visualizeFreeSpace(*submaps);
+  // TODO(py): this free space id is a dirty fix, since this id would not be loaded when we load the saved map
+  int free_space_submap_id = 0;
+  visualizeFreeSpace(submaps->getSubmap(free_space_submap_id)); 
+  // visualizeGroundTsdf(*submaps);
   visualizeBoundingVolume(*submaps);
+  other_vis.Stop();
   vis_infos_are_updated_ = false;
 }
 
@@ -115,6 +160,14 @@ void SubmapVisualizer::visualizeMeshes(SubmapCollection* submaps) {
   }
 }
 
+void SubmapVisualizer::visualizeOccupiedVoxels(SubmapCollection& submaps) {
+  if (config_.visualize_occ_voxels &&
+      occ_voxels_pub_.getNumSubscribers() > 0) {
+    visualization_msgs::MarkerArray markers = generateOccVoxelMsgs(submaps);
+    occ_voxels_pub_.publish(markers);
+  }
+}
+
 void SubmapVisualizer::visualizeTsdfBlocks(const SubmapCollection& submaps) {
   if (config_.visualize_tsdf_blocks &&
       tsdf_blocks_pub_.getNumSubscribers() > 0) {
@@ -123,11 +176,41 @@ void SubmapVisualizer::visualizeTsdfBlocks(const SubmapCollection& submaps) {
   }
 }
 
-void SubmapVisualizer::visualizeFreeSpace(const SubmapCollection& submaps) {
-  if (config_.visualize_free_space && freespace_pub_.getNumSubscribers() > 0) {
-    pcl::PointCloud<pcl::PointXYZI> msg = generateFreeSpaceMsg(submaps);
+void SubmapVisualizer::visualizeFreeSpace(const Submap& freespace_submap) {
+  if (config_.visualize_free_space_tsdf && freespace_tsdf_pub_.getNumSubscribers() > 0) {
+    pcl::PointCloud<pcl::PointXYZI> msg = generateSubmapTsdfMsg(freespace_submap, 
+          config_.visualize_slice, config_.slice_height);
     msg.header.frame_id = global_frame_name_;
-    freespace_pub_.publish(msg);
+    freespace_tsdf_pub_.publish(msg);
+  }
+  if (config_.visualize_free_space_esdf && freespace_esdf_pub_.getNumSubscribers() > 0) {
+    pcl::PointCloud<pcl::PointXYZI> msg = generateSubmapEsdfMsg(freespace_submap,
+          config_.visualize_slice, config_.slice_height);
+    msg.header.frame_id = global_frame_name_;
+    freespace_esdf_pub_.publish(msg);
+  }
+  if (config_.visualize_free_space_gsdf && freespace_gsdf_pub_.getNumSubscribers() > 0) {
+    pcl::PointCloud<pcl::PointXYZI> msg = generateSubmapGsdfMsg(freespace_submap, 
+          config_.visualize_slice, config_.slice_height);
+    msg.header.frame_id = global_frame_name_;
+    freespace_gsdf_pub_.publish(msg);
+  }
+}
+
+void SubmapVisualizer::visualizeEsdfError(const EsdfLayer& esdf_layer) {
+  if (config_.visualize_free_space_esdf_error && freespace_esdf_error_pub_.getNumSubscribers() > 0) {
+    pcl::PointCloud<pcl::PointXYZRGB> msg = generateEsdfErrorMsg(esdf_layer, 
+          config_.visualize_slice, config_.slice_height);
+    msg.header.frame_id = global_frame_name_;
+    freespace_esdf_error_pub_.publish(msg);
+  }
+}
+
+void SubmapVisualizer::visualizeGroundTsdf(const SubmapCollection& submaps) {
+  if (config_.visualize_ground_tsdf && ground_tsdf_pub_.getNumSubscribers() > 0) {
+    pcl::PointCloud<pcl::PointXYZI> msg = generateGroundTsdfMsg(submaps);
+    msg.header.frame_id = global_frame_name_;
+    ground_tsdf_pub_.publish(msg);
   }
 }
 
@@ -141,10 +224,30 @@ void SubmapVisualizer::visualizeBoundingVolume(
   }
 }
 
+// time-consuming
+// make it multi-thread ? 
+// SubmapIndexGetter index_getter(id_list);
+//   std::vector<std::future<void>> threads;
+//   for (int i = 0; i < config_.integration_threads; ++i) {
+//     threads.emplace_back(
+//         std::async(std::launch::async,
+//                    [this, &index_getter, &block_lists, submaps, input, i]() {
+//                      int index;
+//                      while (index_getter.getNextIndex(&index)) {
+//                        this->updateSubmap(submaps->getSubmapPtr(index),
+//                                           interpolators_[i].get(),
+//                                           block_lists.at(index), *input);
+
+//                      }
+//                    }));
+//   }
+
 std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
     SubmapCollection* submaps) {
+  
   std::vector<voxblox_msgs::MultiMesh> result;
 
+  // Timer update_info("visualization/mesh/update_info");
   // Update the visualization infos.
   if (!vis_infos_are_updated_) {
     updateVisInfos(*submaps);
@@ -163,10 +266,13 @@ std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
       ++it;
     }
   }
+  // update_info.Stop();
 
-  // Process all submaps based on their visualization info.
+  // Timer recon_mesh("visualization/mesh/recon");
+  // Process all submaps based on their visualization info. 
+  // NOTE(py): already multi-thread inside the updateMesh function for each block
   for (Submap& submap : *submaps) {
-    if (submap.getLabel() == PanopticLabel::kFreeSpace) {
+    if (submap.getLabel() == PanopticLabel::kFreeSpace) { // skip freespace submap, we do not reconstruct it
       continue;
     }
 
@@ -182,10 +288,11 @@ std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
     // Setup message.
     voxblox_msgs::MultiMesh msg;
     msg.header.stamp = ros::Time::now();
-    msg.header.frame_id = submap.getFrameName();
+    //msg.header.frame_id = submap.getFrameName();
+    msg.header.frame_id = global_frame_name_; //since submap frame is the same as global frame up to now
     msg.name_space = info.name_space;
 
-    // Update the mesh.
+    // Update the mesh. 
     submap.updateMesh();
 
     // Mark the whole mesh for re-publishing if requested.
@@ -200,12 +307,12 @@ std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
     }
 
     // Set the voxblox internal color mode. Gray will be used for overwriting.
-    voxblox::ColorMode color_mode_voxblox = voxblox::ColorMode::kGray;
+    voxblox::ColorMode color_mode_voxblox = voxblox::ColorMode::kGray; //ColorMode::kSubmap, ColorMode::kInstance
     if (color_mode_ == ColorMode::kColor ||
         color_mode_ == ColorMode::kClassification ||
-        (color_mode_ == ColorMode::kPersistent &&
+        (color_mode_ == ColorMode::kPersistent && 
          submap.getChangeState() != ChangeState::kAbsent)) {
-      color_mode_voxblox = voxblox::ColorMode::kColor;
+      color_mode_voxblox = voxblox::ColorMode::kLambertColor;//use the voxel's own color
     } else if (color_mode_ == ColorMode::kNormals) {
       color_mode_voxblox = voxblox::ColorMode::kNormals;
     }
@@ -222,7 +329,7 @@ std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
     submap.getTsdfLayer().getAllAllocatedBlocks(&block_indices);
     for (const auto& block_index : info.previous_blocks) {
       if (std::find(block_indices.begin(), block_indices.end(), block_index) ==
-          block_indices.end()) {
+          block_indices.end()) { // not found
         voxblox_msgs::MeshBlock mesh_block;
         mesh_block.index[0] = block_index.x();
         mesh_block.index[1] = block_index.y();
@@ -237,7 +344,7 @@ std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
       continue;
     }
 
-    // Apply the submap color if necessary.
+    // Apply the submap color if necessary. //ColorMode::kSubmap, ColorMode::kInstance
     if (color_mode_voxblox == voxblox::ColorMode::kGray) {
       for (auto& mesh_block : msg.mesh.mesh_blocks) {
         for (auto& r : mesh_block.r) {
@@ -255,13 +362,17 @@ std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
     // Set alpha values.
     msg.alpha = info.alpha * 255.f;
     result.emplace_back(std::move(msg));
+
+    if(config_.verbosity > 3)
+      ROS_INFO("Visualize submap %d", submap.getID());
   }
+  // recon_mesh.Stop();
   return result;
 }
 
 void SubmapVisualizer::generateClassificationMesh(Submap* submap,
                                                   voxblox_msgs::Mesh* mesh) {
-  if (!submap->hasClassLayer()) {
+  if (!submap->getConfig().use_class_layer) {
     return;
   }
 
@@ -317,6 +428,74 @@ void SubmapVisualizer::generateClassificationMesh(Submap* submap,
                                   mesh);
 }
 
+visualization_msgs::MarkerArray SubmapVisualizer::generateOccVoxelMsgs(
+    const SubmapCollection& submaps) {
+  
+  const float alpha = config_.alpha_occ;
+  unsigned int counter = 0;
+
+  visualization_msgs::MarkerArray result;
+  // Update the visualization infos.
+  if (!vis_infos_are_updated_) {
+    updateVisInfos(submaps);
+  }
+
+  for (const auto& submap : submaps) {
+    if (submap.getLabel() == PanopticLabel::kFreeSpace &&
+        !config_.include_free_space) {
+      continue;
+    }
+
+    const TsdfLayer& layer = submap.getTsdfLayer();
+    size_t vps = layer.voxels_per_side();
+    size_t num_voxels_per_block = vps * vps * vps;
+    FloatingPoint voxel_size = layer.voxel_size();
+
+    visualization_msgs::Marker block_marker;
+    block_marker.header.frame_id = global_frame_name_;
+    block_marker.ns = "occ_voxels_" + std::to_string(submap.getID()) + "_" + submap.getName(); //namespace
+    block_marker.id = counter++;
+    block_marker.type = visualization_msgs::Marker::CUBE_LIST;
+    block_marker.scale.x = block_marker.scale.y = block_marker.scale.z =
+        voxel_size;
+    block_marker.action = visualization_msgs::Marker::ADD;
+    // no rotation
+    block_marker.pose.orientation.x = 0.0;
+    block_marker.pose.orientation.y = 0.0;
+    block_marker.pose.orientation.z = 0.0;
+    block_marker.pose.orientation.w = 1.0;
+
+    voxblox::BlockIndexList blocks;
+    layer.getAllAllocatedBlocks(&blocks);
+    for (const BlockIndex& index : blocks) {
+      // Iterate over all voxels in said blocks.
+      const TsdfBlock& block = layer.getBlockByIndex(index);
+
+      for (size_t linear_index = 0; linear_index < num_voxels_per_block;
+          ++linear_index) {
+        Point coord = block.computeCoordinatesFromLinearIndex(linear_index);
+        const TsdfVoxel& voxel = block.getVoxelByLinearIndex(linear_index);
+        if (std::abs(voxel.distance) < config_.occ_voxel_size_ratio * voxel_size && 
+            voxel.weight > config_.tsdf_min_weight) {
+          geometry_msgs::Point cube_center;
+          cube_center.x = coord.x();
+          cube_center.y = coord.y();
+          cube_center.z = coord.z();
+          block_marker.points.push_back(cube_center);
+          std_msgs::ColorRGBA color_msg;
+          color_msg.r = voxel.color.r / 255.0;
+          color_msg.g = voxel.color.g / 255.0;
+          color_msg.b = voxel.color.b / 255.0;
+          color_msg.a = alpha;
+          block_marker.colors.push_back(color_msg);
+        }
+      }
+    }
+    result.markers.push_back(block_marker);
+  }
+  return result;
+}
+
 visualization_msgs::MarkerArray SubmapVisualizer::generateBlockMsgs(
     const SubmapCollection& submaps) {
   visualization_msgs::MarkerArray result;
@@ -333,6 +512,7 @@ visualization_msgs::MarkerArray SubmapVisualizer::generateBlockMsgs(
 
     // Setup submap.
     voxblox::BlockIndexList blocks;
+    //submap.getMeshLayer().getAllAllocatedMeshes(&blocks);
     submap.getTsdfLayer().getAllAllocatedBlocks(&blocks);
     float block_size =
         submap.getTsdfLayer().voxel_size() *
@@ -340,18 +520,27 @@ visualization_msgs::MarkerArray SubmapVisualizer::generateBlockMsgs(
     unsigned int counter = 0;
 
     // Get color.
-    Color color = kUnknownColor_;
-    const float alpha = 0.2f;
-    auto vis_it = vis_infos_.find(submap.getID());
-    if (vis_it != vis_infos_.end()) {
+    Color color = kUnknownColor_; // (70, 70, 70)
+
+    // How to direct use the mesh's color
+
+    const float alpha = config_.alpha_block;
+    auto vis_it = vis_infos_.find(submap.getID()); //which id should this be in vis_infos
+    if (vis_it != vis_infos_.end()) { //found
       color = vis_it->second.color;
     }
+    // when not rendered with submap color, use the unique color blue
+    // if (color.r == 50 && color.g == 50 && color.b == 50){ 
+    //   color = Color(0, 0, 255);
+    // }
 
-    color = Color(0, 0, 255);
+    // color = Color(0, 0, 255);
+    // color = submap.color; // may use the submap's color
 
     for (auto& block_index : blocks) {
       visualization_msgs::Marker marker;
-      marker.header.frame_id = submap.getFrameName();
+      marker.header.frame_id = global_frame_name_;
+      //marker.header.frame_id = submap.getFrameName();
       marker.header.stamp = ros::Time::now();
       marker.color.r = color.r;
       marker.color.g = color.g;
@@ -360,16 +549,20 @@ visualization_msgs::MarkerArray SubmapVisualizer::generateBlockMsgs(
       marker.action = visualization_msgs::Marker::ADD;
       marker.type = visualization_msgs::Marker::CUBE;
       marker.id = counter++;
-      marker.ns = "tsdf_blocks_" + std::to_string(submap.getID());
+      marker.ns = "tsdf_blocks_" + std::to_string(submap.getID()); //namespace
       marker.scale.x = block_size;
       marker.scale.y = block_size;
       marker.scale.z = block_size;
+      // no rotation
       marker.pose.orientation.x = 0.0;
       marker.pose.orientation.y = 0.0;
       marker.pose.orientation.z = 0.0;
       marker.pose.orientation.w = 1.0;
+      // Point origin =
+      //     submap.getMeshLayer().getMeshByIndex(block_index).origin;
+      
       Point origin =
-          submap.getTsdfLayer().getBlockByIndex(block_index).origin();
+           submap.getTsdfLayer().getBlockByIndex(block_index).origin();
       marker.pose.position.x = origin.x() + block_size / 2.0;
       marker.pose.position.y = origin.y() + block_size / 2.0;
       marker.pose.position.z = origin.z() + block_size / 2.0;
@@ -379,18 +572,87 @@ visualization_msgs::MarkerArray SubmapVisualizer::generateBlockMsgs(
   return result;
 }
 
-pcl::PointCloud<pcl::PointXYZI> SubmapVisualizer::generateFreeSpaceMsg(
+pcl::PointCloud<pcl::PointXYZI> SubmapVisualizer::generateSubmapTsdfMsg(
+    const Submap& submap, bool vis_slice, float slice_height) {
+  pcl::PointCloud<pcl::PointXYZI> result;
+
+  // Create a pointcloud with distance = intensity. Taken from voxblox.
+  if (vis_slice) {
+    constexpr int kZAxisIndex = 2;
+    createDistancePointcloudFromTsdfLayerSlice(
+      submap.getTsdfLayer(), kZAxisIndex, slice_height, &result);
+  } else {
+    createDistancePointcloudFromTsdfLayer(
+      submap.getTsdfLayer(), &result);
+  }
+  return result;
+}
+
+pcl::PointCloud<pcl::PointXYZI> SubmapVisualizer::generateSubmapEsdfMsg(
+    const Submap& submap, bool vis_slice, float slice_height) {
+  pcl::PointCloud<pcl::PointXYZI> result;
+
+  // Create a pointcloud with distance = intensity. Taken from voxblox.
+  if (vis_slice) {
+    constexpr int kZAxisIndex = 2;
+    createDistancePointcloudFromEsdfLayerSlice(
+      submap.getEsdfLayer(), kZAxisIndex, slice_height, &result);
+  } else {
+    createDistancePointcloudFromEsdfLayer(
+      submap.getEsdfLayer(), &result);
+  }
+  return result;
+}
+
+// Gradient SDF
+pcl::PointCloud<pcl::PointXYZI> SubmapVisualizer::generateSubmapGsdfMsg(
+    const Submap& submap, bool vis_slice, float slice_height) {
+  pcl::PointCloud<pcl::PointXYZI> result;
+
+  // Create a pointcloud with gradient = intensity. Taken from voxblox.
+  if (vis_slice) {
+    constexpr int kZAxisIndex = 2;
+    createGradientPointcloudFromTsdfLayerSlice(
+      submap.getTsdfLayer(), kZAxisIndex, slice_height, &result);
+  } else {
+    createGradientPointcloudFromTsdfLayer(
+      submap.getTsdfLayer(), &result);
+  }
+  return result;
+}
+
+// SDF error
+pcl::PointCloud<pcl::PointXYZRGB> SubmapVisualizer::generateEsdfErrorMsg(
+    const EsdfLayer& esdf_layer, bool vis_slice, float slice_height) {
+  pcl::PointCloud<pcl::PointXYZRGB> result;
+
+  // if (vis_slice) {
+  constexpr int kZAxisIndex = 2;
+  createErrorPointcloudFromEsdfLayerSlice(
+      esdf_layer, kZAxisIndex, slice_height, &result);
+  // } else {
+  //   // createGradientPointcloudFromTsdfLayer( // TODO: add this func
+  //   //   submap.getEsdfLayer(), &result);
+  // }
+  return result;
+}
+
+// Deprecated
+pcl::PointCloud<pcl::PointXYZI> SubmapVisualizer::generateGroundTsdfMsg(
     const SubmapCollection& submaps) {
   pcl::PointCloud<pcl::PointXYZI> result;
 
   // Create a pointcloud with distance = intensity. Taken from voxblox.
-  const int free_space_id = submaps.getActiveFreeSpaceSubmapID();
-  if (submaps.submapIdExists(free_space_id)) {
+  // NOTE(py:) used for debugging, only for semantic KITTI 
+  const int ground_submap_id = submaps.getActiveGroundSubmapID();
+  if (submaps.submapIdExists(ground_submap_id)) {
     createDistancePointcloudFromTsdfLayer(
-        submaps.getSubmap(free_space_id).getTsdfLayer(), &result);
+        submaps.getSubmap(ground_submap_id).getTsdfLayer(), &result);
   }
   return result;
 }
+
+// Visualize only a slice
 
 visualization_msgs::MarkerArray SubmapVisualizer::generateBoundingVolumeMsgs(
     const SubmapCollection& submaps) {
@@ -408,7 +670,7 @@ visualization_msgs::MarkerArray SubmapVisualizer::generateBoundingVolumeMsgs(
 
     // Get color.
     Color color = kUnknownColor_;
-    const float alpha = 0.2f;
+    const float alpha = config_.alpha_bounding;
     auto vis_it = vis_infos_.find(submap.getID());
     if (vis_it != vis_infos_.end()) {
       color = vis_it->second.color;
@@ -543,22 +805,22 @@ void SubmapVisualizer::setSubmapVisColor(const Submap& submap,
             info->change_color) {
           switch (submap.getChangeState()) {
             case ChangeState::kNew: {
-              info->color = Color(0, 200, 0);
+              info->color = Color(0, 200, 0); //green
               break;
             }
             case ChangeState::kMatched: {
-              info->color = Color(0, 0, 255);
+              info->color = Color(0, 0, 255); //blue
               break;
             }
             case ChangeState::kAbsent: {
-              info->color = Color(255, 0, 0);
+              info->color = Color(255, 0, 0); //red
               break;
             }
-            case ChangeState::kPersistent: {
-              info->color = Color(0, 0, 255);
+            case ChangeState::kPersistent: { //no-longer tracked but persistent in the map
+              info->color = Color(0, 0, 255); //blue
               break;
             }
-            case ChangeState::kUnobserved: {
+            case ChangeState::kUnobserved: { //gray
               info->color = Color(150, 150, 150);
               break;
             }
@@ -590,7 +852,7 @@ void SubmapVisualizer::setSubmapVisColor(const Submap& submap,
           if (submap.isActive()) {
             info->alpha = 1.f;
           } else {
-            info->alpha = 0.4f;
+            info->alpha = 0.2f;
           }
           info->republish_everything = true;
           info->was_active = submap.isActive();
@@ -600,7 +862,7 @@ void SubmapVisualizer::setSubmapVisColor(const Submap& submap,
       case VisualizationMode::kInactive: {
         if (info->was_active != submap.isActive() || info->change_color) {
           if (submap.isActive()) {
-            info->alpha = 0.4f;
+            info->alpha = 0.2f;
           } else {
             info->alpha = 1.f;
           }
@@ -617,7 +879,7 @@ void SubmapVisualizer::setSubmapVisColor(const Submap& submap,
           if (is_persistent) {
             info->alpha = 1.0f;
           } else {
-            info->alpha = 0.4f;
+            info->alpha = 0.2f;
           }
           info->republish_everything = true;
           info->was_active = is_persistent;
@@ -658,14 +920,10 @@ SubmapVisualizer::ColorMode SubmapVisualizer::colorModeFromString(
     return ColorMode::kClasses;
   } else if (color_mode == "change") {
     return ColorMode::kChange;
-  } else if (color_mode == "classification") {
+  } else if (color_mode == "classification") { // actually label fusion certanity
     return ColorMode::kClassification;
   } else if (color_mode == "persistent") {
     return ColorMode::kPersistent;
-  } else if (color_mode == "uncertainty") {
-    return ColorMode::kUncertainty;
-  } else if (color_mode == "entropy") {
-    return ColorMode::kEntropy;
   } else {
     LOG(WARNING) << "Unknown ColorMode '" << color_mode
                  << "', using 'color' instead.";
@@ -691,14 +949,9 @@ std::string SubmapVisualizer::colorModeToString(ColorMode color_mode) {
       return "classification";
     case ColorMode::kPersistent:
       return "persistent";
-    case ColorMode::kEntropy:
-      return "entropy";
-    case ColorMode::kUncertainty:
-      return "uncertainty";
     default:
       return "unknown";
   }
-  return "unknown";
 }
 
 SubmapVisualizer::VisualizationMode

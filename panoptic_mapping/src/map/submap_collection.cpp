@@ -4,20 +4,25 @@
 
 #include <memory>
 #include <string>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <boost/filesystem.hpp>
+
 #include "panoptic_mapping/SubmapCollection.pb.h"
+
+namespace fs = boost::filesystem;
 
 namespace panoptic_mapping {
 
 Submap* SubmapCollection::createSubmap(const Submap::Config& config) {
   submaps_.emplace_back(std::make_unique<Submap>(config, &submap_id_manager_,
-                                                 &instance_id_manager_));
-  Submap* new_submap = submaps_.back().get();
-  id_to_index_[new_submap->getID()] = submaps_.size() - 1;
+                                                 &instance_id_manager_)); //add a new one
+  Submap* new_submap = submaps_.back().get(); //get the new one
+  id_to_index_[new_submap->getID()] = submaps_.size() - 1; //submap index
   return new_submap;
 }
 
@@ -127,7 +132,11 @@ bool SubmapCollection::saveToFile(const std::string& file_path) const {
                    << "'.";
       outfile.close();
       return false;
-    }
+    } 
+    // else {
+    //   LOG(INFO) << "Save submap with ID '" << submap->getID() << "' (" 
+    //             << submap->getName().c_str() << ").";        
+    // }
   }
   outfile.close();
   return true;
@@ -184,10 +193,10 @@ bool SubmapCollection::loadFromFile(const std::string& file_path,
   }
   proto_file.close();
 
-  // Recompute data that is not stored with the submap.
+  // Recompute data that is not stored with the submap (bounding volume and mesh)
   if (recompute_data) {
     for (Submap& submap : *this) {
-      submap.updateEverything(false);
+      submap.updateEverything();
     }
   }
   return true;
@@ -202,6 +211,28 @@ std::string SubmapCollection::checkMapFileExtension(const std::string& file) {
   }
   return file;
 }
+
+bool SubmapCollection::saveMeshToFile(const std::string& folder_path) const {
+  CHECK(!folder_path.empty());
+
+  if (!fs::exists(folder_path.c_str())) {
+    if(!boost::filesystem::create_directory(folder_path.c_str()))
+      return false;
+  }
+
+  // TODO(py): consider make it run with multi-thread to speed up
+  for (const Submap& submap : *this) {
+    std::string id_pad;
+    std::ostringstream oss;
+		oss << std::setfill('0') << std::setw(5) << submap.getID() << "_" << submap.getName() << ".ply";
+    std::string file_path = folder_path + "/" + oss.str();
+    voxblox::outputMeshLayerAsPly(file_path,
+                                  submap.getMeshLayer());
+  }
+
+  return true;
+}
+
 
 std::unique_ptr<SubmapCollection> SubmapCollection::clone() const {
   std::unique_ptr<SubmapCollection> result =

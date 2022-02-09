@@ -55,6 +55,7 @@ class ClassProjectiveIntegrator : public ProjectiveIntegrator {
   bool updateVoxel(InterpolatorBase* interpolator, TsdfVoxel* voxel,
                    const Point& p_C, const InputData& input,
                    const int submap_id, const bool is_free_space_submap,
+                   const bool apply_normal_refine, const Transformation& T_C_S,
                    const float truncation_distance, const float voxel_size,
                    ClassVoxel* class_voxel = nullptr) const override;
 
@@ -68,7 +69,7 @@ class ClassProjectiveIntegrator : public ProjectiveIntegrator {
       registration_;
 
   // Cached data.
-  std::unordered_map<int, int> id_to_class_;
+  std::unordered_map<int, int> id_to_class_; //<submap_id, submap_class>
   size_t num_classes_;
 };
 

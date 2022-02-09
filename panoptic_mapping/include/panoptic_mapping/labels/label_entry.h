@@ -20,10 +20,10 @@ namespace panoptic_mapping {
  */
 struct LabelEntry {
   // Required fields.
-  // The ID of the input data referring to this label.
+  // The ID of the input data referring to this label (instance label).
   int segmentation_id = -1;
 
-  // The ID of the semantic class.
+  // The ID of the semantic class (semantic label).
   int class_id = -1;
 
   // The panoptic category of the label.
@@ -50,6 +50,9 @@ struct LabelEntry {
 
   // Color to be used to display this label.
   Color color = Color(80, 80, 80);
+
+  bool normal_reliable = true; 
+  bool is_moving = false;
 };
 
 }  // namespace panoptic_mapping

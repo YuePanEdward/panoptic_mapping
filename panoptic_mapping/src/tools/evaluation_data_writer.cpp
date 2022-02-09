@@ -11,21 +11,19 @@
 
 namespace panoptic_mapping {
 
-config_utilities::Factory::RegistrationRos<DataWriterBase, EvaluationDataWriter>
-    EvaluationDataWriter::registration_("evaluation");
-
-void EvaluationDataWriter::Config::checkParams() const {}
-
 void EvaluationDataWriter::Config::setupParamsAndPrinting() {
   setupParam("verbosity", &verbosity);
   setupParam("log_data_writer_config", &log_data_writer_config);
   setupParam("store_map_every_n_frames", &store_map_every_n_frames);
 }
 
+void EvaluationDataWriter::Config::checkParams() const {}
+
 EvaluationDataWriter::EvaluationDataWriter(const Config& config)
-    : config_(config.checkValid()),
-      LogDataWriter(config.log_data_writer_config, false) {
+    : LogDataWriter(config_.log_data_writer_config, false),
+      config_(config.checkValid()) {
   LOG_IF(INFO, config_.verbosity >= 1) << "\n" << config_.toString();
+  // NOTE(schmluk): Setup is invoked from the LogDataWriter
 }
 
 void EvaluationDataWriter::setupLogFile() {
@@ -60,10 +58,11 @@ void EvaluationDataWriter::setupLogFile() {
 }
 
 void EvaluationDataWriter::setupEvaluations() {
+  // Setup evaluations of the log writer.
   LogDataWriter::setupEvaluations();
+
   // Additional evaluations of the evaluation writer.
   if (config_.store_map_every_n_frames > 0) {
-    writeEntry("SavedMapName [-]");
     evaluations_.emplace_back([this](const SubmapCollection& submaps) {
       this->storeSubmaps(submaps);
     });
@@ -73,7 +72,6 @@ void EvaluationDataWriter::setupEvaluations() {
 void EvaluationDataWriter::storeSubmaps(const SubmapCollection& submaps) {
   store_submap_frame_++;
   if (store_submap_frame_ < config_.store_map_every_n_frames) {
-    writeEntry("");
     return;
   }
   store_submap_frame_ = 0;
@@ -81,7 +79,6 @@ void EvaluationDataWriter::storeSubmaps(const SubmapCollection& submaps) {
   ss << std::setw(6) << std::setfill('0') << store_submap_counter_;
   store_submap_counter_++;
   submaps.saveToFile(output_path_ + "/" + ss.str());
-  writeEntry(ss.str());
 }
 
 }  // namespace panoptic_mapping

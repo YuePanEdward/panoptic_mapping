@@ -18,6 +18,7 @@ cs_add_library(${PROJECT_NAME}
         src/visualization/planning_visualizer.cpp
         src/visualization/tracking_visualizer.cpp
         src/conversions/conversions.cpp
+        src/transformer/transformer.cpp
         )
 
 ###############

@@ -13,6 +13,7 @@ void Camera::Config::checkParams() const {
   checkParamGT(fx, 0.f, "fx");
   checkParamGT(fy, 0.f, "fy");
   checkParamGT(min_range, 0.f, "min_range");
+  checkParamGT(smooth_thre_m, 0.f, "smooth_thre_m");
   checkParamCond(max_range > min_range,
                  "'max_range' is expected > 'min_range'.");
   checkParamCond(vx <= width, "'vx' is expected <= 'width'.");
@@ -29,6 +30,7 @@ void Camera::Config::setupParamsAndPrinting() {
   setupParam("fy", &fy, "px");
   setupParam("max_range", &max_range, "m");
   setupParam("min_range", &min_range, "m");
+  setupParam("smooth_thre_m", &smooth_thre_m, "m");
 }
 
 Camera::Camera(const Config& config) : config_(config.checkValid()) {
@@ -101,6 +103,48 @@ bool Camera::blockIsInViewFrustum(const Submap& submap,
   return pointIsInViewFrustum(p_C, block_diag_half);
 }
 
+bool Camera::projectPointCloudToImagePlane(const Pointcloud& ptcloud_C,
+                                          const Colors& colors, 
+                                          const Labels& labels,
+                                          cv::Mat &vertex_map,   // corresponding point
+                                          cv::Mat &depth_image,  // Float depth image (CV_32FC1).
+                                          cv::Mat &color_image,
+                                          cv::Mat &id_image)     // panoptic label
+                                          const {
+    bool label_available = false;
+    if (labels.size() == ptcloud_C.size())
+      label_available = true;
+    
+    // TODO(py): consider to calculate in parallel to speed up
+    for (int i=0; i<ptcloud_C.size(); i++)
+    {
+      int u, v;
+      if (projectPointToImagePlane(ptcloud_C[i], &u, &v)) //colum, row
+      { 
+        float old_depth = depth_image.at<float>(v,u);
+        float cur_depth = ptcloud_C[i](2);
+        if (old_depth <= 0.0 || old_depth > cur_depth) // save only nearest point for each pixel
+        {
+          for (int k=0; k<=2; k++) // should be 3f instead of 3b
+          {
+            vertex_map.at<cv::Vec3f>(v,u)[k] = ptcloud_C[i](k);
+          }
+
+          depth_image.at<float>(v,u) = cur_depth;
+          
+          //BGR default order
+          color_image.at<cv::Vec3b>(v,u)[0] = colors[i].b;
+          color_image.at<cv::Vec3b>(v,u)[1] = colors[i].g;
+          color_image.at<cv::Vec3b>(v,u)[2] = colors[i].r;
+          
+          if (label_available)
+            id_image.at<int>(v,u) = labels[i].id_label; // it's better to have another one for visualization
+        }
+      }
+    }
+    return false;                                         
+}
+
 bool Camera::projectPointToImagePlane(const Point& p_C, float* u,
                                       float* v) const {
   // All values are ceiled and floored to guarantee that the resulting points
@@ -132,19 +176,20 @@ bool Camera::projectPointToImagePlane(const Point& p_C, int* u, int* v) const {
   return true;
 }
 
+// Find submaps that locate in FOV
 std::vector<int> Camera::findVisibleSubmapIDs(const SubmapCollection& submaps,
                                               const Transformation& T_M_C,
                                               bool only_active_submaps,
                                               bool include_freespace) const {
   std::vector<int> result;
   for (const Submap& submap : submaps) {
-    if (!submap.isActive() && only_active_submaps) {
+    if (!submap.isActive() && only_active_submaps) { //non-active submaps are directly skipped
       continue;
     }
-    if (submap.getLabel() == PanopticLabel::kFreeSpace && !include_freespace) {
+    if (submap.getLabel() == PanopticLabel::kFreeSpace && !include_freespace) { //free-space submap is also skipped
       continue;
     }
-    if (!submapIsInViewFrustum(submap, T_M_C)) {
+    if (!submapIsInViewFrustum(submap, T_M_C)) { //only keep those in FOV
       continue;
     }
     result.push_back(submap.getID());
@@ -228,6 +273,77 @@ cv::Mat Camera::computeValidityImage(const cv::Mat& depth_image) const {
     }
   }
   return validity_image;
+}
+
+cv::Mat Camera::computeNormalImage(const cv::Mat &vertex_map,
+                                   const cv::Mat &depth_image) const {
+    
+    cv::Mat normal_image(depth_image.size(), CV_32FC3, 0.0);
+    for (int u=0; u < config_.width; u++){
+      for (int v=0; v < config_.height; v++){
+        Point p;
+        p << vertex_map.at<cv::Vec3f>(v, u)[0], 
+             vertex_map.at<cv::Vec3f>(v, u)[1], 
+             vertex_map.at<cv::Vec3f>(v, u)[2];
+
+        float d_p = depth_image.at<float>(v,u);
+        float sign = 1.0; //sign of the normal vector
+        
+        if(d_p > 0)
+        {
+          // neighbor x 
+          int n_x_u;
+          if(u == config_.width-1){
+            n_x_u = u - 1;
+            sign *= -1.0;
+          }
+          else{
+            n_x_u = u + 1;
+          }
+
+          Point n_x;
+          n_x << vertex_map.at<cv::Vec3f>(v, n_x_u)[0], 
+                 vertex_map.at<cv::Vec3f>(v, n_x_u)[1], 
+                 vertex_map.at<cv::Vec3f>(v, n_x_u)[2];
+
+          float d_n_x = depth_image.at<float>(v,n_x_u);
+          if (d_n_x < 0)
+            continue;
+          if (std::abs(d_p - d_n_x) > config_.smooth_thre_m) //on the uncontinous boundary
+            continue;
+
+          // neighbor y
+          int n_y_v;
+          if(v == config_.height-1){
+            n_y_v = v - 1;
+            sign *= -1.0;
+          }
+          else {
+            n_y_v = v + 1;
+          }
+
+          Point n_y;
+          n_y << vertex_map.at<cv::Vec3f>(n_y_v, u)[0], 
+                 vertex_map.at<cv::Vec3f>(n_y_v, u)[1], 
+                 vertex_map.at<cv::Vec3f>(n_y_v, u)[2];
+
+          float d_n_y = depth_image.at<float>(n_y_v,u);
+          if (d_n_y < 0)
+            continue;
+          if (std::abs(d_p - d_n_y) > config_.smooth_thre_m) //on the uncontinous boundary
+            continue;
+          
+          Point dx = n_x - p;
+          Point dy = n_y - p;
+
+          Point normal = (dx.cross(dy)).normalized() * sign; 
+          cv::Vec3f& normals = normal_image.at<cv::Vec3f>(v, u);
+          for (int k=0; k<=2; k++)
+            normals[k] = normal(k);
+        }
+      }
+    }
+    return normal_image;
 }
 
 }  // namespace panoptic_mapping

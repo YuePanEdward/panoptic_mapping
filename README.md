@@ -1,6 +1,9 @@
-![Ubuntu 18 + ROS Melodic](https://github.com/ethz-asl/panoptic_mapping/actions/workflows/build_test_18.yml/badge.svg) ![Ubuntu 20 + ROS Noetic](https://github.com/ethz-asl/panoptic_mapping/actions/workflows/build_test_20.yml/badge.svg)
+# PanMap
+This is a temporary repository used for my master thesis "Mapping for online path planning and 3D reconstruction". It is built on top of **[panoptic_mapping](https://github.com/ethz-asl/panoptic_mapping)** and **[voxblox](https://github.com/ethz-asl/voxblox)**. My improvement over voxblox on ESDF mapping can be found **[here](https://github.com/YuePanEdward/voxblox)** under the ``devel/voxfield`` branch.
+
 
 # Panoptic Mapping
+
 This package contains **panoptic_mapping**, a general framework for semantic volumetric mapping. We provide, among other, a submap-based approach that leverages panoptic scene understanding towards adaptive spatio-temporally consistent volumetric mapping, as well as regular, monolithic semantic mapping.
 
 ![combined](https://user-images.githubusercontent.com/36043993/135645102-e5798e36-e2b0-4611-9260-ec9d54d38e47.png)
@@ -17,9 +20,9 @@ Multi-resolution 3D Reconstruction, active and inactive panoptic submaps for tem
 * [Datasets](#Datasets)
 
 **Examples**
-- [Running the Panoptic Mapper](#running-the-panoptic-mapper)
-- [Monolithic Semantic Mapping](#monolithic-semantic-mapping)
-- [Running the RIO Dataset](#running-the-rio-dataset)
+* [Running the Panoptic Mapper](#running-the-panoptic-mapper)
+* [Monolithic Semantic Mapping](#monolithic-semantic-mapping)
+* [Running the RIO Dataset](#running-the-rio-dataset)
 
 **Other**
 * [Contributing](#Contributing)
@@ -43,148 +46,63 @@ If you find this package useful for your research, please consider citing our pa
 A short video overview explaining the approach will be released upon publication.
 
 # Installation
-Installation instructions for Linux. The repository was developed and tested on Ubuntu 18.04 with ROS melodic and Ubuntu 20.04 with ROS noetic.
-
-<details>
-  <summary>Ubuntu 18.04 + ROS Melodic.</summary>
-<p>
-  
-**Prerequisites**
-
-1. If not already done so, install [ROS](http://wiki.ros.org/ROS/Installation) (Desktop-Full is recommended).
-
-2. If not already done so, create a catkin workspace with [catkin tools](https://catkin-tools.readthedocs.io/en/latest/):
-
-  ```shell script    
-  sudo apt-get install python-catkin-tools  
-  mkdir -p ~/catkin_ws/src
-  cd ~/catkin_ws
-  catkin init
-  catkin config --extend /opt/ros/melodic
-  catkin config --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
-  catkin config --merge-devel
-  ```
-
-**Installation**
-
-1. Install system dependencies:
-
-  ```shell script
-  sudo apt-get install python-wstool python-catkin-tools autoconf libtool git  
-  ```
-
-2. Move to your catkin workspace:
-
-  ```shell script
-  cd ~/catkin_ws/src
-  ```
-
-3. Download repo using [SSH](https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh) or HTTPS:
-
-  ```shell script
-  git clone git@github.com:ethz-asl/panoptic_mapping.git  # SSH
-  git clone https://github.com/ethz-asl/panoptic_mapping.git  # HTTPS
-  ```
-
-4. Download and install package dependencies using ros install:
-
-  * If you created a new workspace.
-
-  ```shell script
-  wstool init . ./panoptic_mapping/panoptic_mapping_ssh.rosinstall    # SSH
-  wstool init . ./panoptic_mapping/panoptic_mapping_https.rosinstall  # HTTPS
-  wstool update
-  ```
-
-  * If you use an existing workspace. Notice that some dependencies require specific branches that will be checked out.
-
-  ```shell script
-  wstool merge -t . ./panoptic_mapping/panoptic_mapping.rosinstall
-  wstool update
-  ```
-
-5. Compile and source:
-
-  ```shell script
-  catkin build panoptic_mapping_utils
-  source ../devel/setup.bash
-  ```
-</p>
-</details>
-
-<details>
-<summary>Ubuntu 20.04 + ROS Noetic.</summary>
-<p>
+Installation instructions for Linux. The repository was developed on Ubuntu 18.04 with ROS melodic and also tested on Ubuntu 20.04 with ROS noetic.
 
 **Prerequisites**
 
 1. If not already done so, install [ROS](http://wiki.ros.org/ROS/Installation) (Desktop-Full is recommended).
 
 2. If not already done so, create a catkin workspace with [catkin tools](https://catkin-tools.readthedocs.io/en/latest/):
-
-  ```shell script    
-  sudo apt-get install python3-catkin-tools
-  mkdir -p ~/catkin_ws/src
-  cd ~/catkin_ws
-  catkin init
-  catkin config --extend /opt/ros/noetic
-  catkin config --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
-  catkin config --merge-devel
-  ```
+    ```shell script    
+    # Create a new workspace
+    sudo apt-get install python-catkin-tools
+    mkdir -p ~/catkin_ws/src
+    cd ~/catkin_ws
+    catkin init
+    catkin config --extend /opt/ros/$ROS_DISTRO
+    catkin config --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    catkin config --merge-devel
+    ```
 
 **Installation**
 
 1. Install system dependencies:
-
-  ```shell script
-  sudo apt-get install python3-pip python3-wstool python3-catkin-tools autoconf libtool git
-  pip3 install osrf-pycommon
-  ```
+    ```shell script
+    sudo apt-get install python-wstool python-catkin-tools
+    ```
 
 2. Move to your catkin workspace:
+    ```shell script
+    cd ~/catkin_ws/src
+    ```
 
-  ```shell script
-  cd ~/catkin_ws/src
-  ```
-
-3. Download repo using [SSH](https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh) or HTTPS:
-
-  ```shell script
-  git clone git@github.com:ethz-asl/panoptic_mapping.git  # SSH
-  git clone https://github.com/ethz-asl/panoptic_mapping.git  # HTTPS
-  ```
+3. Download repo using [SSH](https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh):
+    ```shell script
+    git clone git@github.com:ethz-asl/panoptic_mapping.git
+    ```
 
 4. Download and install package dependencies using ros install:
+    * If you created a new workspace.
+    ```shell script
+    wstool init . ./panoptic_mapping/panoptic_mapping.rosinstall
+    wstool update
+    ```
 
-  * If you created a new workspace.
-
-  ```shell script
-  wstool init . ./panoptic_mapping/panoptic_mapping_ssh.rosinstall    # SSH
-  wstool init . ./panoptic_mapping/panoptic_mapping_https.rosinstall  # HTTPS
-  wstool update
-  ```
-
-  * If you use an existing workspace. Notice that some dependencies require specific branches that will be checked out.
-
-  ```shell script
-  wstool merge -t . ./panoptic_mapping/panoptic_mapping.rosinstall
-  wstool update
-  ```
+    * If you use an existing workspace. Notice that some dependencies require specific branches that will be checked out.
+    ```shell script
+    wstool merge -t . ./panoptic_mapping/panoptic_mapping.rosinstall
+    wstool update
+    ```
 
 5. Compile and source:
-
-  ```shell script
-  catkin build panoptic_mapping_utils
-  source ../devel/setup.bash
-  ```
-</p>
-</details>
-
-
+    ```shell script
+    catkin build panoptic_mapping_utils
+    source ../devel/setup.bash
+    ```
 # Datasets
 The datasets described in the paper and used for the demo can be downloaded from the [ASL Datasets](https://projects.asl.ethz.ch/datasets/doku.php?id=panoptic_mapping).
 
-A utility script is provided to directly download the flat data:
+To a utility script is provided to directly download the data:
 ```
 roscd panoptic_mapping_utils
 export FLAT_DATA_DIR="/home/$USER/Documents"  # Or whichever path you prefer.
@@ -225,33 +143,7 @@ This example explains how to run the Panoptic Multi-TSDF mapper on the flat data
     <img src="https://user-images.githubusercontent.com/36043993/135861611-4d576750-3104-4d73-87dc-60b7a4ad1df6.png" width="400">
 
 ## Monolithic Semantic Mapping
-Panoptic Mapping supports also the monolithic use case. This example explains how to run the Panoptic Single-TSDF mapper on the flat dataset. 
-
-1. If not already done so, download the flat dataset:
-
-   ```
-   export FLAT_DATA_DIR="/home/$USER/Documents"  # Or whichever path you prefer.
-   chmod +x panoptic_mapping_utils/scripts/download_flat_dataset.sh
-   ./panoptic_mapping_utils/scripts/download_flat_dataset.sh
-   ```
-
-2. Replace the data `base_path` in `launch/run.launch (L10)` and `file_name` in `config/mapper/single_tsdf.yaml (L15)` to the downloaded path. 
-
-3. To use the single-TSDF mapper and real segmentation predictions, set `use_detectron` in `launch/run.launch (L6)` to true and `config` in `launch/run.launch (L22)` to 'single_tsdf'.
-
-4. Run the mapper:
-
-   ```
-   roslaunch panoptic_mapping_ros run.launch
-   ```
-
-5. You should now see the map being incrementally built. 
-
-6. Varying visualization modes are supported, the `classes` (default) will color the mesh according to the predicted semantic class. Other modes, such as `classification` will show the confidence of the aggregated predictions.
-
-![single_combined](https://user-images.githubusercontent.com/36043993/143055994-2703f57c-cf4a-4126-a43c-cb7f47b6da02.png)
-
-Predicted classes (left) and corresponding fusion confidence (right, low to high in red to green).
+This example will follow shortly.
 
 ## Running the RIO Dataset
 This example will follow shortly.
@@ -267,7 +159,7 @@ To add to this repository:
     ```
     # Download the linter
     cd <linter_dest>
-    git clone git@github.com:ethz-asl/linter.git -b feature/noetic
+    git clone git@github.com:ethz-asl/linter.git
     cd linter
     echo ". $(realpath setup_linter.sh)" >> ~/.bashrc
     bash

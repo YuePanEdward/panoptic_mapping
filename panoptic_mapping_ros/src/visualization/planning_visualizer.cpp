@@ -191,5 +191,6 @@ visualization_msgs::Marker PlanningVisualizer::generateSliceMsg() {
   }
   return marker;
 }
+// TODO(py): add ESDF visualization
 
 }  // namespace panoptic_mapping

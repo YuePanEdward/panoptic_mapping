@@ -64,7 +64,7 @@ class MeshIntegrator {
     int required_belonging_corners = 4;
 
     // Number of threads used to mesh a layer in parallel.
-    int integrator_threads = std::thread::hardware_concurrency();
+    int integration_threads = std::thread::hardware_concurrency();
 
     // If true, voxels not belonging to this submap will be set to the
     // truncation distance.

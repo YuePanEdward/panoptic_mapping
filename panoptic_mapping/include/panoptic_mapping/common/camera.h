@@ -22,6 +22,7 @@ class Camera {
   struct Config : public config_utilities::Config<Config> {
     int verbosity = 0;
 
+    // RGBD-Camera
     // Camera Intrinsics in pixels.
     int width = 640;
     int height = 480;
@@ -35,6 +36,10 @@ class Camera {
 
     // Minimum range (ray-length) in meters.
     float min_range = 0.1f;
+
+    // Max bearable depth difference between 
+    // two adjacent pixels for a valid normal estimation
+    float smooth_thre_m = 1.0f;
 
     Config() { setConfigName("Camera"); }
 
@@ -80,6 +85,12 @@ class Camera {
       const float max_range = -1.f, bool only_active_submaps = true) const;
 
   // Projection.
+  bool projectPointCloudToImagePlane(const Pointcloud& ptcloud_C, const Colors& colors, 
+                                     const Labels& labels, cv::Mat &vertex_map,   // corresponding point    
+                                     cv::Mat &depth_image,  // Float depth image (CV_32FC1).     
+                                     cv::Mat &color_image,
+                                     cv::Mat &id_image) const;    
+                                          
   bool projectPointToImagePlane(const Point& p_C, float* u, float* v) const;
 
   bool projectPointToImagePlane(const Point& p_C, int* u, int* v) const;
@@ -87,6 +98,8 @@ class Camera {
   cv::Mat computeVertexMap(const cv::Mat& depth_image) const;
 
   cv::Mat computeValidityImage(const cv::Mat& depth_image) const;
+
+  cv::Mat computeNormalImage(const cv::Mat& vertex_map, const cv::Mat& depth_image) const;
 
  private:
   const Config config_;

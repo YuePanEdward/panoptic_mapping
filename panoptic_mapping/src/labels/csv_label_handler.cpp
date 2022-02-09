@@ -32,10 +32,12 @@ CsvLabelHandler::CsvLabelHandler(const Config& config, bool print_config)
   LOG_IF(INFO, config_.verbosity >= 1 && print_config) << "\n"
                                                        << config_.toString();
   // Setup the labels from csv file.
-  readLabelsFromFile();
+  if (!config_.file_name.empty())
+    readLabelsFromFile();
 }
 
 void CsvLabelHandler::readLabelsFromFile() {
+  
   // NOTE(schmluk): Assumes fixed header names in the target file. Reading
   // exceptions should be handled by the CSVReader. Read all optional columns
   // and write the present ones. All header columns need to be present at the
@@ -84,7 +86,7 @@ void CsvLabelHandler::readLabelsFromFile() {
     labels_[inst] = std::make_unique<LabelEntry>(label);
   }
 
-  // Cehck all labels valid.
+  // Check all labels valid.
   if (missed_count) {
     LOG(ERROR)
         << missed_count

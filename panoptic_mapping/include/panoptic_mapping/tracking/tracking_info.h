@@ -12,6 +12,7 @@
 #include <opencv2/core/mat.hpp>
 
 #include "panoptic_mapping/common/camera.h"
+#include "panoptic_mapping/common/lidar.h"
 
 namespace panoptic_mapping {
 
@@ -28,6 +29,7 @@ class TrackingInfo {
  public:
   explicit TrackingInfo(int submap_id) : submap_id_(submap_id) {}
   TrackingInfo(int submap_id, Camera::Config camera);
+  TrackingInfo(int submap_id, Lidar::Config lidar);
   ~TrackingInfo() = default;
 
   // Approximate rendering.
@@ -49,8 +51,11 @@ class TrackingInfo {
 
   // Approximate rendering.
   const Camera::Config camera_;
+  const Lidar::Config lidar_;
   int u_min_, u_max_, v_min_, v_max_;
   cv::Mat image_;
+  int width_, height_;
+  float max_range_, min_range_;
 
   // Visualization data vertex rendering.
   std::vector<Eigen::Vector2i> points_;
@@ -68,9 +73,13 @@ class TrackingInfoAggregator {
   void insertInputImage(const cv::Mat& id_image, const cv::Mat& depth_image,
                         const Camera::Config& camera,
                         int rendering_subsampling);
+  
+  void insertInputImage(const cv::Mat& id_image, const cv::Mat& depth_image,
+                        const Lidar::Config& lidar,
+                        int rendering_subsampling);
 
   // Get results. Requires that all input data is already set.
-  std::vector<int> getInputIDs() const;
+  std::vector<int> getInputIDs() const; // # label in this image
   bool getHighestMetric(int input_id, int* submap_id, float* value,
                         const std::string& metric = "iou") const;
   bool getAllMetrics(int input_id, std::vector<std::pair<int, float>>* id_value,
@@ -88,10 +97,11 @@ class TrackingInfoAggregator {
   float computOverlap(int input_id, int submap_id) const;
 
   // Data.
+  // overlap of the input label and the rendered label
   std::unordered_map<int, std::unordered_map<int, int>>
-      overlap_;  // <input_id, <rendered_id, count>>
-  std::unordered_map<int, int> total_rendered_count_;  // <rendered_id, count>
-  std::unordered_map<int, int> total_input_count_;     // <input_id, count>
+      overlap_;  // <input_id, <rendered_id, count>> , unit: pixel
+  std::unordered_map<int, int> total_rendered_count_;  // <rendered_id, count> //label, #pixel of such label
+  std::unordered_map<int, int> total_input_count_;     // <input_id, count>    //label, #pixel of such label
 };
 
 }  // namespace panoptic_mapping

@@ -14,28 +14,46 @@ namespace panoptic_mapping {
 // Utility function.
 void incrementMap(std::unordered_map<int, int>* map, int id, int value = 1) {
   auto it = map->find(id);
-  if (it == map->end()) {
+  if (it == map->end()) { //not found -> add new key
     map->emplace(id, value);
-  } else {
-    it->second += value;
+  } else {  //found -> add count
+    it->second += value; 
   }
 }
 
 TrackingInfo::TrackingInfo(int submap_id, Camera::Config camera)
     : submap_id_(submap_id), camera_(std::move(camera)) {
   image_ =
-      cv::Mat(cv::Size(camera_.width, camera_.height), CV_32SC1, cv::Scalar(0));
+      cv::Mat(cv::Size(camera_.height, camera_.width), CV_32SC1, cv::Scalar(0)); // may have bug?
   u_min_ = camera_.width;
   u_max_ = 0;
   v_min_ = camera_.height;
   v_max_ = 0;
+  width_ = camera_.width;
+  height_ = camera_.height;
+  max_range_ = camera_.max_range;
+  min_range_ = camera_.min_range;
+}
+
+TrackingInfo::TrackingInfo(int submap_id, Lidar::Config lidar)
+    : submap_id_(submap_id), lidar_(std::move(lidar)) {
+  image_ =
+      cv::Mat(cv::Size(lidar_.height, lidar_.width), CV_32SC1, cv::Scalar(0));
+  u_min_ = lidar_.width;
+  u_max_ = 0;
+  v_min_ = lidar_.height;
+  v_max_ = 0;
+  width_ = lidar_.width;
+  height_ = lidar_.height;
+  max_range_ = lidar_.max_range;
+  min_range_ = lidar_.min_range;
 }
 
 void TrackingInfo::insertRenderedPoint(int u, int v, int size_x, int size_y) {
   // Mark the left side of the maximum vertex size for later evaluation.
-  const int u_min = std::max(0, u - size_x);
-  const int width = u + 2 * size_x + 1 - u_min;
-  const int v_max = std::min(camera_.height - 1, v + size_y);
+  const int u_min = std::max(0, u - size_x); //left side
+  const int width = u + 2 * size_x + 1 - u_min; 
+  const int v_max = std::min(height_ - 1, v + size_y);
   const int v_min = std::max(0, v - size_y);
   for (int v2 = v_min; v2 <= v_max; ++v2) {
     int& data = image_.at<int>(v2, u_min);
@@ -52,13 +70,14 @@ void TrackingInfo::evaluate(const cv::Mat& id_image,
   // Pass through the image and lookup which pixels should be covered by the
   // submap. Must be called after all input is inserted.
   for (int v = v_min_; v <= v_max_; ++v) {
-    int range =
-        0;  // Number of pixels in x direction from current index to be counted.
-    for (int u = u_min_; u <= std::min(u_max_, camera_.width - 1); ++u) {
+    // Number of pixels in x direction from current index to be counted.
+    int range = 0;   
+    for (int u = u_min_; u <= std::min(u_max_, width_ - 1); ++u) {
       range = std::max(range, image_.at<int>(v, u)) - 1;
+      // ROS_INFO("range: %d", range);
       if (range > 0) {
         const float depth = depth_image.at<float>(v, u);
-        if (depth >= camera_.min_range && depth <= camera_.max_range) {
+        if (depth >= min_range_ && depth <= max_range_) {
           incrementMap(&counts_, id_image.at<int>(v, u));
         }
       }
@@ -80,16 +99,21 @@ void TrackingInfoAggregator::insertTrackingInfos(
 void TrackingInfoAggregator::insertTrackingInfo(const TrackingInfo& info) {
   // Parse all overlaps. We don't check for duplicate data here since by
   // construction each submap should be parsed separately and only once.
-  for (const auto& id_count_pair : info.counts_) {
+
+  // overlap_ area, unit:pixel 
+  // std::unordered_map<int, std::unordered_map<int, int>>
+  // info.counts_, std::unordered_map<int, int>, input_id, #pixel count
+  // key problem: info.counts_
+  for (const auto& id_count_pair : info.counts_) { 
     incrementMap(&total_rendered_count_, info.submap_id_, id_count_pair.second);
     auto it = overlap_.find(id_count_pair.first);
-    if (it == overlap_.end()) {
+    if (it == overlap_.end()) { //not found the submap
       it = overlap_
                .insert(std::pair<int, std::unordered_map<int, int>>(
                    id_count_pair.first, std::unordered_map<int, int>()))
                .first;
     }
-    it->second[info.submap_id_] = id_count_pair.second;
+    it->second[info.submap_id_] = id_count_pair.second; //#overlap pixel
   }
 }
 
@@ -101,11 +125,28 @@ void TrackingInfoAggregator::insertInputImage(const cv::Mat& id_image,
     for (int v = 0; v < id_image.rows; v += rendering_subsampling) {
       const float depth = depth_image.at<float>(v, u);
       if (depth >= camera.min_range && depth <= camera.max_range) {
-        incrementMap(&total_input_count_, id_image.at<int>(v, u));
+        incrementMap(&total_input_count_, id_image.at<int>(v, u));//increase the count of the id of the current pixel
       }
     }
   }
 }
+
+void TrackingInfoAggregator::insertInputImage(const cv::Mat& id_image,
+                                              const cv::Mat& depth_image,
+                                              const Lidar::Config& lidar,
+                                              int rendering_subsampling) {
+  for (int u = 0; u < id_image.cols; u += rendering_subsampling) {
+    for (int v = 0; v < id_image.rows; v += rendering_subsampling) {
+      const float depth = depth_image.at<float>(v, u);
+      if (depth >= lidar.min_range && depth <= lidar.max_range) {
+        incrementMap(&total_input_count_, id_image.at<int>(v, u));//increase the count of the id of the current pixel
+      }
+    }
+  }
+}
+
+//id_image should be given beforehand
+
 
 std::vector<int> TrackingInfoAggregator::getInputIDs() const {
   // Get a vector containing all unique input ids.
@@ -174,19 +215,24 @@ bool TrackingInfoAggregator::getHighestMetric(int input_id, int* submap_id,
   return false;
 }
 
+// What does this metric mean
 bool TrackingInfoAggregator::getAllMetrics(
-    int input_id, std::vector<std::pair<int, float>>* id_value,
+    int input_id, std::vector<std::pair<int, float>>* id_value, //the iou for each submap to this input seg
     const std::string& metric) const {
   CHECK_NOTNULL(id_value);
   // Return all overlapping submap ids ordered by IoU.
-  if (overlap_.find(input_id) == overlap_.end()) {
+  if (overlap_.find(input_id) == overlap_.end()) { //not found
+   // ROS_INFO("input %d not found in the overlap set [size = %d]", 
+   //          input_id, overlap_.size());
+
     return false;
   }
   auto value_function = getComputeValueFunction(metric);
   id_value->clear();
-  id_value->reserve(overlap_.at(input_id).size());
+
+  id_value->reserve(overlap_.at(input_id).size()); //submap count
   for (const auto& id_count_pair : overlap_.at(input_id)) {
-    id_value->emplace_back(id_count_pair.first,
+    id_value->emplace_back(id_count_pair.first, //submap_id
                            value_function(input_id, id_count_pair.first));
   }
   if (id_value->empty()) {

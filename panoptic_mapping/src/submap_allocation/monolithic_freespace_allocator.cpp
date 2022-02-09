@@ -7,12 +7,12 @@ config_utilities::Factory::RegistrationRos<FreespaceAllocatorBase,
     MonolithicFreespaceAllocator::registration_("monolithic");
 
 void MonolithicFreespaceAllocator::Config::checkParams() const {
-  checkParamConfig(submap);
+  checkParamConfig(submap_config);
 }
 
 void MonolithicFreespaceAllocator::Config::setupParamsAndPrinting() {
   setupParam("verbosity", &verbosity);
-  setupParam("submap", &submap);
+  setupParam("submap_config", &submap_config);
 }
 
 MonolithicFreespaceAllocator::MonolithicFreespaceAllocator(const Config& config,
@@ -30,7 +30,7 @@ Submap* MonolithicFreespaceAllocator::allocateSubmap(SubmapCollection* submaps,
   }
 
   // Otherwise create a new freespace submap.
-  Submap* space_submap = submaps->createSubmap(config_.submap);
+  Submap* space_submap = submaps->createSubmap(config_.submap_config);
   space_submap->setLabel(PanopticLabel::kFreeSpace);
   space_submap->setInstanceID(-1);  // Will never appear in a seg image.
   space_submap->setName("FreeSpace");

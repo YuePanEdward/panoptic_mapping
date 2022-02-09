@@ -19,7 +19,7 @@ void Submap::Config::checkParams() const {
   checkParamCond(voxels_per_side % 2 == 0,
                  "voxels_per_side is required to be a multiple of 2.");
   checkParamGT(voxels_per_side, 0, "voxels_per_side");
-  checkParamConfig(mesh);
+  checkParamConfig(mesh_config);
   if (classification.isSetup()) {
     checkParamConfig(classification);
   }
@@ -29,14 +29,77 @@ void Submap::Config::initializeDependentVariableDefaults() {
   if (truncation_distance < 0.f) {
     truncation_distance *= -voxel_size;
   }
+
+  // voxfield
+  esdf_voxfield_integrator_config.max_behind_surface_m = 2.0 * truncation_distance;
+  esdf_voxfield_integrator_config.band_distance_m =
+         std::min(fixed_band_ratio * voxel_size, truncation_distance); // TODO
+  esdf_voxfield_integrator_config.default_distance_m = esdf_max_distance_m;
+  esdf_voxfield_integrator_config.max_distance_m = esdf_max_distance_m;
+  esdf_voxfield_integrator_config.early_break = esdf_early_break;
+  esdf_voxfield_integrator_config.patch_on = esdf_patch_on;
+  esdf_voxfield_integrator_config.finer_esdf_on = finer_esdf_on;
+  esdf_voxfield_integrator_config.fixed_band_esdf_on = fixed_band_esdf_on;
+  esdf_voxfield_integrator_config.num_buckets = num_buckets;
+  esdf_voxfield_integrator_config.min_weight = tsdf_min_weight;
+  esdf_voxfield_integrator_config.gradient_sign = gradient_sign;
+  esdf_voxfield_integrator_config.occ_voxel_size_ratio = occ_voxel_size_ratio;
+  esdf_voxfield_integrator_config.range_boundary_offset = 
+    GlobalIndex(esdf_local_offset_x, esdf_local_offset_y, 
+                esdf_local_offset_z);
+  
+  // fiesta
+  esdf_fiesta_integrator_config.max_behind_surface_m = 2.0 * truncation_distance;
+  esdf_fiesta_integrator_config.default_distance_m = esdf_max_distance_m;
+  esdf_fiesta_integrator_config.max_distance_m = esdf_max_distance_m;
+  esdf_fiesta_integrator_config.early_break = esdf_early_break;
+  esdf_fiesta_integrator_config.patch_on = esdf_patch_on;
+  esdf_fiesta_integrator_config.num_buckets = num_buckets;
+  esdf_fiesta_integrator_config.range_boundary_offset = 
+    GlobalIndex(esdf_local_offset_x, esdf_local_offset_y, 
+                esdf_local_offset_z);
+
+  // edt 
+  esdf_edt_integrator_config.max_behind_surface_m = 2.0 * truncation_distance;
+  esdf_edt_integrator_config.default_distance_m = esdf_max_distance_m;
+  esdf_edt_integrator_config.max_distance_m = esdf_max_distance_m;
+  esdf_edt_integrator_config.num_buckets = num_buckets;
+  esdf_edt_integrator_config.range_boundary_offset = 
+    GlobalIndex(esdf_local_offset_x, esdf_local_offset_y, 
+                esdf_local_offset_z);
+  
+  // voxblox
+  esdf_voxblox_integrator_config.max_distance_m = esdf_max_distance_m;
+  esdf_voxblox_integrator_config.default_distance_m = esdf_max_distance_m;
+  esdf_voxblox_integrator_config.min_distance_m = truncation_distance;
+  esdf_voxblox_integrator_config.min_weight = tsdf_min_weight;
+  esdf_voxblox_integrator_config.num_buckets = num_buckets;
 }
 
 void Submap::Config::setupParamsAndPrinting() {
   setupParam("voxel_size", &voxel_size);
   setupParam("truncation_distance", &truncation_distance);
   setupParam("voxels_per_side", &voxels_per_side);
+  setupParam("use_class_layer", &use_class_layer);
+  setupParam("mesh_config", &mesh_config);
+
   setupParam("classification", &classification, "classification");
-  setupParam("mesh", &mesh, "mesh");
+
+  // esdf config
+  setupParam("esdf_integrator_name", &esdf_integrator_name);
+  setupParam("esdf_fiesta_patch", &esdf_patch_on);
+  setupParam("esdf_fiesta_break", &esdf_early_break);
+  setupParam("finer_esdf_on", &finer_esdf_on);
+  setupParam("fixed_band_esdf_on", &fixed_band_esdf_on);
+  setupParam("tsdf_min_weight", &tsdf_min_weight);
+  setupParam("occ_voxel_size_ratio", &occ_voxel_size_ratio);
+  setupParam("fixed_band_ratio", &fixed_band_ratio);
+  setupParam("gradient_sign", &gradient_sign);
+  setupParam("esdf_max_distance_m", &esdf_max_distance_m, "m"); 
+  setupParam("esdf_local_offset_x", &esdf_local_offset_x, "voxel");
+  setupParam("esdf_local_offset_y", &esdf_local_offset_y, "voxel");
+  setupParam("esdf_local_offset_z", &esdf_local_offset_z, "voxel");
+  setupParam("num_buckets", &num_buckets);
 }
 
 bool Submap::Config::useClassLayer() const {
@@ -74,18 +137,43 @@ void Submap::initialize() {
   // Setup layers.
   tsdf_layer_ =
       std::make_shared<TsdfLayer>(config_.voxel_size, config_.voxels_per_side);
+  esdf_layer_ =
+      std::make_shared<EsdfLayer>(config_.voxel_size, config_.voxels_per_side);
+  occ_layer_ =
+      std::make_shared<OccLayer>(config_.voxel_size, config_.voxels_per_side);
   mesh_layer_ =
       std::make_shared<MeshLayer>(config_.voxel_size * config_.voxels_per_side);
+ 
   if (config_.useClassLayer()) {
     class_layer_ = config_.classification.create(config_.voxel_size,
                                                  config_.voxels_per_side);
     has_class_layer_ = true;
   }
-
-  // Setup tools.
+  
+  // Setup mesh integrator.
   mesh_integrator_ = std::make_unique<MeshIntegrator>(
-      config_.mesh, tsdf_layer_, mesh_layer_, class_layer_,
+      config_.mesh_config, tsdf_layer_, mesh_layer_, class_layer_,
       config_.truncation_distance);
+  
+  // Set up occupancy integrator
+  occ_integrator_ = std::make_unique<voxblox::OccTsdfIntegrator>(
+     config_.occ_tsdf_integrator_config, tsdf_layer_.get(), occ_layer_.get()); 
+  // NOTE(py): figure out "get"
+
+  // Set up ESDF integrator.
+  if (config_.esdf_integrator_name == "voxblox") {
+    esdf_voxblox_integrator_ = std::make_unique<voxblox::EsdfIntegrator>(
+        config_.esdf_voxblox_integrator_config, tsdf_layer_.get(), esdf_layer_.get()); 
+  } else if (config_.esdf_integrator_name == "fiesta") {
+    esdf_fiesta_integrator_ = std::make_unique<voxblox::EsdfOccFiestaIntegrator>(
+        config_.esdf_fiesta_integrator_config, occ_layer_.get(), esdf_layer_.get()); 
+  } else if (config_.esdf_integrator_name == "edt") {
+    esdf_edt_integrator_ = std::make_unique<voxblox::EsdfOccEdtIntegrator>(
+        config_.esdf_edt_integrator_config, occ_layer_.get(), esdf_layer_.get()); 
+  } else { // "voxfield", by default
+    esdf_voxfield_integrator_ = std::make_unique<voxblox::EsdfVoxfieldIntegrator>(
+        config_.esdf_voxfield_integrator_config, tsdf_layer_.get(), esdf_layer_.get()); 
+  }
 }
 
 void Submap::setT_M_S(const Transformation& T_M_S) {
@@ -107,6 +195,13 @@ void Submap::getProto(SubmapProto* proto) const {
   proto->set_voxel_size(config_.voxel_size);
   proto->set_voxels_per_side(config_.voxels_per_side);
   proto->set_truncation_distance(config_.truncation_distance);
+
+  // // Store ESDF data.
+  // if (has_esdf_layer_) {
+  //   proto->set_num_esdf_blocks(esdf_layer_->getNumberOfAllocatedBlocks());
+  // } else {
+  //   proto->set_num_esdf_blocks(0);
+  // }
 
   // Store classification data.
   if (has_class_layer_) {
@@ -143,6 +238,17 @@ bool Submap::saveToStream(std::fstream* outfile_ptr) const {
     outfile_ptr->close();
     return false;
   }
+
+  // // ESDF Layer. (TODO)
+  // // if (has_esdf_layer_) {
+  //   const EsdfLayer& esdf_layer = *esdf_layer_;
+  //   if (!esdf_layer.saveBlocksToStream(kIncludeAllBlocks,
+  //                                     voxblox::BlockIndexList(), outfile_ptr)) {
+  //     LOG(ERROR) << "Could not write submap esdf blocks to stream.";
+  //     outfile_ptr->close();
+  //     return false;
+  //   }
+  // // }
 
   // Class Layer.
   if (has_class_layer_) {
@@ -193,6 +299,17 @@ std::unique_ptr<Submap> Submap::loadFromStream(
     return nullptr;
   }
 
+  // TODO
+  // // Load the ESDF layer.
+  // // if (submap_proto.num_esdf_blocks() > 0) {
+  //     if (!voxblox::io::LoadBlocksFromStream(
+  //           submap_proto.num_blocks(), EsdfLayer::BlockMergingStrategy::kReplace,
+  //           proto_file_ptr, submap->esdf_layer_.get(), tmp_byte_offset_ptr)) {
+  //       LOG(ERROR) << "Could not load the esdf blocks from stream.";
+  //       return nullptr;
+  //     }
+  // // }
+
   // Load the classification layer.
   if (submap_proto.num_class_blocks() > 0) {
     submap->class_layer_ = loadClassLayerFromStream(
@@ -232,10 +349,62 @@ void Submap::updateEverything(bool only_updated_blocks) {
 
 void Submap::updateMesh(bool only_updated_blocks, bool use_class_layer) {
   // Use the default integrator config to have color always available.
+  // main entrance to mesh integration
   mesh_integrator_->generateMesh(only_updated_blocks, true,
                                  has_class_layer_ && use_class_layer);
 }
 
+void Submap::updateOccFromTsdf(bool clear_updated_flag_occ, bool in_batch) const {
+  occ_integrator_->updateFromTsdfLayer(clear_updated_flag_occ, in_batch);
+}
+
+// void Submap::updateEsdfFromOcc(bool clear_updated_flag_esdf) const {
+//   // Used for FIESTA
+//   IndexList insert_list = occ_integrator_->getInsertList();
+//   IndexList delete_list = occ_integrator_->getDeleteList();
+//   occ_integrator_->clearList();
+//   esdf_integrator_->loadInsertList(insert_list);
+//   esdf_integrator_->loadDeleteList(delete_list);
+//   if (insert_list.size() + delete_list.size() > 0) {
+//     // ROS_INFO_STREAM("Insert [" << insert_list.size() << "] and delete ["
+//     //                            << delete_list.size()
+//     //                            << "] occupied voxels.");
+
+//     // set update state to 0 after the processing
+//     esdf_integrator_->updateFromOccLayer(clear_updated_flag_esdf);
+//   }
+//   esdf_integrator_->clear();
+// }
+
+// Directly from Tsdf to Esdf
+void Submap::updateEsdfFromTsdf(bool clear_updated_flag_esdf) const {
+  if (config_.esdf_integrator_name == "voxblox") { // voxblox: tsdf -> esdf
+    esdf_voxblox_integrator_->updateFromTsdfLayer(clear_updated_flag_esdf);
+  } else if (config_.esdf_integrator_name == "fiesta") { // fiesta: tsdf -> occ -> esdf
+    updateOccFromTsdf(clear_updated_flag_esdf, false);
+    IndexList insert_list = occ_integrator_->getInsertList();
+    IndexList delete_list = occ_integrator_->getDeleteList();
+    occ_integrator_->clearList();
+    esdf_fiesta_integrator_->loadInsertList(insert_list);
+    esdf_fiesta_integrator_->loadDeleteList(delete_list);
+    if (insert_list.size() + delete_list.size() > 0) 
+      esdf_fiesta_integrator_->updateFromOccLayer(clear_updated_flag_esdf);
+    esdf_fiesta_integrator_->clear();
+  } else if (config_.esdf_integrator_name == "edt") { // edt: tsdf -> occ -> esdf
+    updateOccFromTsdf(clear_updated_flag_esdf, false);
+    IndexList insert_list = occ_integrator_->getInsertList();
+    IndexList delete_list = occ_integrator_->getDeleteList();
+    occ_integrator_->clearList();
+    esdf_edt_integrator_->loadInsertList(insert_list);
+    esdf_edt_integrator_->loadDeleteList(delete_list);
+    if (insert_list.size() + delete_list.size() > 0) 
+      esdf_edt_integrator_->updateFromOccLayer(clear_updated_flag_esdf);
+    esdf_edt_integrator_->clear();
+  } else { // by default, voxfield: tsdf -> esdf
+    esdf_voxfield_integrator_->updateFromTsdfLayer(clear_updated_flag_esdf);
+  }
+}
+                                               
 void Submap::computeIsoSurfacePoints() {
   iso_surface_points_ = std::vector<IsoSurfacePoint>();
 
@@ -313,7 +482,7 @@ std::unique_ptr<Submap> Submap::clone(
     result->class_layer_ = class_layer_->clone();
   }
   result->mesh_integrator_ = std::make_unique<MeshIntegrator>(
-      result->config_.mesh, result->tsdf_layer_, result->mesh_layer_,
+      result->config_.mesh_config, result->tsdf_layer_, result->mesh_layer_,
       result->class_layer_, result->config_.truncation_distance);
 
   // The bounding volume can not completely be copied so it's just updated,

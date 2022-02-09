@@ -6,8 +6,11 @@
 #include <thread>
 #include <vector>
 
+#include <ros/ros.h>
+
 #include "panoptic_mapping/3rd_party/config_utilities.hpp"
 #include "panoptic_mapping/common/camera.h"
+#include "panoptic_mapping/common/lidar.h"
 #include "panoptic_mapping/common/common.h"
 #include "panoptic_mapping/integration/projection_interpolators.h"
 #include "panoptic_mapping/integration/tsdf_integrator_base.h"
@@ -34,7 +37,10 @@ class ProjectiveIntegrator : public TsdfIntegratorBase {
     // If true, use unitary (w=1) weights to update the TSDF. Otherwise use
     // weights as a function of the squared depth to approximate typical RGBD
     // sensor confidence.
-    bool use_constant_weight = false;
+    bool weight_reduction = false;
+
+    // Weight reduction w.r.t the distance to the sensor (default: square)
+    float weight_reduction_exp = 2.0f;
 
     // Maximum weight used for TSDF updates. High max weight keeps information
     // longer in memory, low max weight favors rapid updates.
@@ -57,8 +63,18 @@ class ProjectiveIntegrator : public TsdfIntegratorBase {
     bool use_longterm_fusion = false;
 
     // Number of threads used to perform integration. Integration is
-    // submap-parallel.
+    // submap-parallel. (reasonable)
     int integration_threads = std::thread::hardware_concurrency();
+
+    bool use_lidar = false;
+
+    bool apply_normal_refine = false;
+
+    bool apply_normal_refine_freespace = false;
+
+    float reliable_band_ratio = 2.0;
+
+    float reliable_normal_ratio_thre = 0.2;
 
     Config() { setConfigName("ProjectiveTsdfIntegrator"); }
 
@@ -102,15 +118,18 @@ class ProjectiveIntegrator : public TsdfIntegratorBase {
    * @param input Input data used for the update.
    * @param submap_id SubmapID of the owning submap.
    * @param is_free_space_submap Whether the voxel belongs to a freespace map.
+   * @param apply_normal_refine Whether use the normal vector to refine the projective SDF.
    * @param truncation_distance Truncation distance to be used.
    * @param voxel_size Voxel size of the TSDF layer.
    * @param class_voxel Optional: class voxel to be updated.
 
    * @return True if the voxel was updated.
    */
+  //NOTE(py): add param "apply_normal_refine" and "T_C_S"
   virtual bool updateVoxel(InterpolatorBase* interpolator, TsdfVoxel* voxel,
                            const Point& p_C, const InputData& input,
                            const int submap_id, const bool is_free_space_submap,
+                           const bool apply_normal_refine, const Transformation& T_C_S,
                            const float truncation_distance,
                            const float voxel_size,
                            ClassVoxel* class_voxel = nullptr) const;
@@ -125,39 +144,33 @@ class ProjectiveIntegrator : public TsdfIntegratorBase {
   virtual bool computeSignedDistance(const Point& p_C,
                                      InterpolatorBase* interpolator,
                                      float* sdf) const;
-
-  /**
-   * @brief Compute the measurement weight for a given voxel based on the
-   * parameters set in the config.
-   *
-   * @param p_C Voxel center in camera frame in meters.
-   * @param voxel_size The voxel size in meters.
-   * @param truncation_distance The truncation distance in meters.
-   * @param sdf The signed distance used for this update.
-   * @return The measurement weight.
-   */
-  virtual float computeWeight(const Point& p_C, const float voxel_size,
-                              const float truncation_distance,
-                              const float sdf) const;
-
-  /**
-   * @brief Update the values of a voxel in a weighted averaging fashion.
-   *
-   * @param voxel The voxel to be updated. The pointer is not checked for
-   * validity.
-   * @param sdf The signed distance measurement to be fused, already truncated
-   * to the truncation distance.
-   * @param weight The measurement weight to be used for the update.
-   * @param color Optional pointer to a color to be fused.
-   */
-  virtual void updateVoxelValues(TsdfVoxel* voxel, const float sdf,
+  
+  virtual bool computeSignedDistance(const Point& p_C,
+                                     InterpolatorBase* interpolator,
+                                     float* sdf, float* u, float* v) const;
+  
+  float computeVoxelWeight(const Point& p_C, const float voxel_size,
+                           const float truncation_distance,
+                           const float sdf, bool projective = true,
+                           const bool with_init_weight = false, const float init_weight = 1.0) const override;
+  
+  void updateVoxelValues(TsdfVoxel* voxel, const float sdf,
                                  const float weight,
-                                 const Color* color = nullptr) const;
+                                 const Color* color = nullptr) const override;
+
+  void updateVoxelGradient(TsdfVoxel* voxel, const Ray normal,
+                                   const float weight) const override;
+
 
   // Cached data.
   Eigen::MatrixXf range_image_;
   float max_range_in_image_ = 0.f;
-  const Camera::Config* cam_config_;
+  float max_range_;
+  float min_range_;
+  float max_z_;
+  float min_z_;
+  // const Camera::Config* cam_config_;
+  // const Lidar::Config* lidar_config_;
   std::vector<std::unique_ptr<InterpolatorBase>>
       interpolators_;  // one for each thread.
 

@@ -52,7 +52,6 @@ TsdfRegistrator::TsdfRegistrator(const Config& config)
 void TsdfRegistrator::checkSubmapCollectionForChange(
     SubmapCollection* submaps) const {
   auto t_start = std::chrono::high_resolution_clock::now();
-  std::string info;
 
   // Check all inactive maps for alignment with the currently active ones.
   std::vector<int> id_list;
@@ -65,34 +64,30 @@ void TsdfRegistrator::checkSubmapCollectionForChange(
 
   // Perform change detection in parallel.
   SubmapIndexGetter index_getter(id_list);
-  std::vector<std::future<std::string>> threads;
+  std::vector<std::future<void>> threads;
   for (int i = 0; i < config_.integration_threads; ++i) {
     threads.emplace_back(
         std::async(std::launch::async, [this, &index_getter, submaps]() {
           int index;
-          std::string info;
           while (index_getter.getNextIndex(&index)) {
-            info += this->checkSubmapForChange(*submaps,
-                                               submaps->getSubmapPtr(index));
+            this->checkSubmapForChange(*submaps, submaps->getSubmapPtr(index));                                   
           }
-          return info;
         }));
   }
 
   // Join all threads.
   for (auto& thread : threads) {
-    info += thread.get();
+    thread.get();
   }
   auto t_end = std::chrono::high_resolution_clock::now();
 
-  LOG_IF(INFO, config_.verbosity >= 2)
-      << "Performed change detection in "
-      << std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start)
-             .count()
-      << (config_.verbosity < 3 || info.empty() ? "ms." : "ms:" + info);
+  if(config_.verbosity > 2)
+    ROS_INFO("Performed change detection in %d ms", 
+           std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start)
+             .count());
 }
 
-std::string TsdfRegistrator::checkSubmapForChange(
+void TsdfRegistrator::checkSubmapForChange(
     const SubmapCollection& submaps, Submap* submap) const {
   // Check overlapping submaps for conflicts or matches.
   for (const Submap& other : submaps) {
@@ -101,8 +96,9 @@ std::string TsdfRegistrator::checkSubmapForChange(
       continue;
     }
 
-    // Note(schmluk): Exclude free space for thin structures. Although there's
+    // NOTE(schmluk): Exclude free space for thin structures. Although there's
     // potentially a nicer way of solving this.
+    // Too small voxel size would also be ruled out
     if (other.getLabel() == PanopticLabel::kFreeSpace &&
         submap->getConfig().voxel_size < other.getConfig().voxel_size * 0.5) {
       continue;
@@ -114,24 +110,23 @@ std::string TsdfRegistrator::checkSubmapForChange(
       if (submap->getChangeState() != ChangeState::kAbsent) {
         submap->setChangeState(ChangeState::kAbsent);
       }
-      std::stringstream info;
-      info << "\nSubmap " << submap->getID() << " (" << submap->getName()
-           << ") conflicts with submap " << other.getID() << " ("
-           << other.getName() << ").";
-      return info.str();
+      if (config_.verbosity > 3) {
+        ROS_INFO("Submap %d (%s) conflicts with submap %d (%s)",
+          submap->getID(), submap->getName().c_str(), 
+          other.getID(), other.getName().c_str());
+      }
     } else if (submap->getClassID() == other.getClassID() && submaps_match) {
       // Semantically and geometrically match.
       submap->setChangeState(ChangeState::kPersistent);
     }
   }
-  return "";
 }
 
 bool TsdfRegistrator::submapsConflict(const Submap& reference,
                                       const Submap& other,
                                       bool* submaps_match) const {
   // Reference is the finished submap (with Iso-surfce-points) that is
-  // compared to the active submap other.
+  // compared to the inactive submap "other".
   Transformation T_O_R = other.getT_S_M() * reference.getT_M_S();
   const float rejection_count =
       config_.normalize_by_voxel_weight
@@ -168,7 +163,6 @@ bool TsdfRegistrator::submapsConflict(const Submap& reference,
         }
       } else {
         // Check for class belonging.
-
         if (other.hasClassLayer()) {
           const ClassVoxel* class_voxel =
               other.getClassLayer().getVoxelPtrByCoordinates(point.position);

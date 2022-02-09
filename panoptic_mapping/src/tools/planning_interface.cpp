@@ -116,6 +116,7 @@ PlanningInterface::VoxelState PlanningInterface::getVoxelState(
   return VoxelState::kUnknown;
 }  // namespace panoptic_mapping
 
+// input is a point position, output is the sdf at this point in the panmap
 bool PlanningInterface::getDistance(const Point& position, float* distance,
                                     bool consider_change_state,
                                     bool include_free_space) const {
@@ -203,6 +204,7 @@ bool PlanningInterface::getDistance(const Point& position, float* distance,
       return true;
     }
   }
+  // if not observed for all
   return false;
 }
 

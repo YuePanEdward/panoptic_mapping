@@ -28,10 +28,24 @@ class SubmapVisualizer {
     std::string color_mode = "color";        // Initial color mode.
     int submap_color_discretization = 20;
     bool visualize_mesh = true;
-    bool visualize_tsdf_blocks = true;
-    bool visualize_free_space = true;
-    bool visualize_bounding_volumes = true;
+    bool visualize_tsdf_blocks = false;
+    bool visualize_occ_voxels = false;
+    bool visualize_slice = true; // slice or space point cloud
+    bool visualize_free_space_tsdf = false;
+    bool visualize_free_space_esdf = false;
+    bool visualize_free_space_gsdf = false;
+    bool visualize_free_space_esdf_error = true;
+    bool visualize_ground_tsdf = false;
+    bool visualize_bounding_volumes = false;
     bool include_free_space = false;
+    float slice_height = 0.0f;
+    float occ_voxel_size_ratio = 0.875f;
+    float tsdf_min_weight = 1e-6;
+    // transparency alpha for visualization
+    float alpha_occ = 0.15f;
+    float alpha_block = 0.2f;
+    float alpha_bounding = 0.05f;
+
     std::string ros_namespace;
 
     Config() { setConfigName("SubmapVisualizer"); }
@@ -57,9 +71,9 @@ class SubmapVisualizer {
     kClasses,
     kChange,
     kClassification,
+    kPersistent,
     kUncertainty,
-    kEntropy,
-    kPersistent
+    kEntropy
   };
   enum class VisualizationMode {
     kAll = 0,
@@ -82,16 +96,30 @@ class SubmapVisualizer {
       SubmapCollection* submaps);
   virtual visualization_msgs::MarkerArray generateBlockMsgs(
       const SubmapCollection& submaps);
-  virtual pcl::PointCloud<pcl::PointXYZI> generateFreeSpaceMsg(
+
+  virtual pcl::PointCloud<pcl::PointXYZI> generateSubmapTsdfMsg(
+      const Submap& submap, bool vis_slice, float slice_height);
+  virtual pcl::PointCloud<pcl::PointXYZI> generateSubmapEsdfMsg(
+      const Submap& submap, bool vis_slice, float slice_height);
+  virtual pcl::PointCloud<pcl::PointXYZI> generateSubmapGsdfMsg(
+      const Submap& submap, bool vis_slice, float slice_height);
+  virtual pcl::PointCloud<pcl::PointXYZRGB> generateEsdfErrorMsg(
+    const EsdfLayer& esdf_layer, bool vis_slice, float slice_height); 
+  virtual pcl::PointCloud<pcl::PointXYZI> generateGroundTsdfMsg(
       const SubmapCollection& submaps);
   virtual visualization_msgs::MarkerArray generateBoundingVolumeMsgs(
       const SubmapCollection& submaps);
-
+  virtual visualization_msgs::MarkerArray generateOccVoxelMsgs(
+      const SubmapCollection& submaps);
+  
   // Publish visualization requests.
   virtual void visualizeAll(SubmapCollection* submaps);
   virtual void visualizeMeshes(SubmapCollection* submaps);
+  virtual void visualizeOccupiedVoxels(SubmapCollection& submaps);
   virtual void visualizeTsdfBlocks(const SubmapCollection& submaps);
-  virtual void visualizeFreeSpace(const SubmapCollection& submaps);
+  virtual void visualizeFreeSpace(const Submap& freespace_submap);
+  virtual void visualizeEsdfError(const EsdfLayer& esdf_layer);
+  virtual void visualizeGroundTsdf(const SubmapCollection& submaps); // deprecated
   virtual void visualizeBoundingVolume(const SubmapCollection& submaps);
   virtual void publishTfTransforms(const SubmapCollection& submaps);
 
@@ -134,7 +162,7 @@ class SubmapVisualizer {
   // Settings.
   VisualizationMode visualization_mode_;
   ColorMode color_mode_;
-  std::string global_frame_name_ = "mission";
+  std::string global_frame_name_ = "world";
 
   // Members.
   std::shared_ptr<Globals> globals_;
@@ -149,8 +177,13 @@ class SubmapVisualizer {
 
   // ROS.
   ros::NodeHandle nh_;
-  ros::Publisher freespace_pub_;
+  ros::Publisher freespace_tsdf_pub_;
+  ros::Publisher freespace_esdf_pub_;
+  ros::Publisher freespace_gsdf_pub_;
+  ros::Publisher freespace_esdf_error_pub_;
+  ros::Publisher ground_tsdf_pub_;
   ros::Publisher mesh_pub_;
+  ros::Publisher occ_voxels_pub_;
   ros::Publisher tsdf_blocks_pub_;
   ros::Publisher bounding_volume_pub_;
 

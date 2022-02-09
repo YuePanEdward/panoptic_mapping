@@ -26,6 +26,7 @@ target_link_libraries(${PROJECT_NAME}_proto ${PROTOBUF_LIBRARIES})
 
 cs_add_library(${PROJECT_NAME}
         src/common/camera.cpp
+        src/common/lidar.cpp
         src/common/input_data_user.cpp
         src/map/submap.cpp
         src/map/submap_collection.cpp
@@ -50,7 +51,12 @@ cs_add_library(${PROJECT_NAME}
         src/submap_allocation/monolithic_freespace_allocator.cpp
         src/integration/projective_tsdf_integrator.cpp
         src/integration/class_projective_tsdf_integrator.cpp
-        src/integration/single_tsdf_integrator.cpp
+        src/integration/single_projective_tsdf_integrator.cpp
+        src/integration/raycast_tsdf_integrator.cpp
+        src/integration/single_raycast_tsdf_integrator.cpp
+        src/integration/class_raycast_tsdf_integrator.cpp
+        src/integration/adaptive_tsdf_integrator.cpp
+        src/integration/class_adaptive_tsdf_integrator.cpp
         src/integration/projection_interpolators.cpp
         src/integration/mesh_integrator.cpp
         src/map_management/map_manager.cpp
@@ -66,15 +72,6 @@ cs_add_library(${PROJECT_NAME}
         src/tools/serialization.cpp
         )
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_proto stdc++fs)
-
-##########
-# Tests #
-##########
-
-if (CATKIN_ENABLE_TESTING)
-    catkin_add_gtest(serialization-test test/serialization.cpp)
-    target_link_libraries(serialization-test ${catkin_LIBRARIES} ${PROJECT_NAME})
-endif()
 
 ##########
 # Export #
