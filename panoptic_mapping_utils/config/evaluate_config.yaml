@@ -17,7 +17,7 @@
 
 # kitti dataset seq 07
 ground_truth_pointcloud_file: /media/yuepan/SeagateNew/1_data/kitti/gt_map/merged_gt_map_kitti_07.ply
-map_file: /media/yuepan/SeagateNew/1_data/kitti/results/mono_25cm_merged_normal2.panmap
+map_file: /media/yuepan/SeagateNew/1_data/kitti/results/pan_5_10_25_25cm_nonormal_test.panmap
 esdf_file_path: /media/yuepan/SeagateNew/1_data/kitti/results/mono_35cm_fiesta.esdf
 
 # newer college dataset
@@ -27,10 +27,10 @@ esdf_file_path: /media/yuepan/SeagateNew/1_data/kitti/results/mono_35cm_fiesta.e
 
 
 verbosity: 2
-trunc_dist: -2.0
+trunc_dist: 0.50 # -2.0
 color_by_mesh_distance: true
 ignore_truncated_points: true
-is_single_tsdf: true
+is_single_tsdf: false
 include_all_submaps: true
 use_chamfer_dist: true
 visualize_esdf_error: true

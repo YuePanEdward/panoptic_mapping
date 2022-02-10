@@ -46,7 +46,7 @@ id_tracker:
   voxels_per_side: 16
 
   # freespace esdf mapping
-  esdf_integrator_name: voxblox # select from voxblox, voxfield, fiesta and edt
+  esdf_integrator_name: voxfield # select from voxblox, voxfield, fiesta and edt
   esdf_fiesta_patch: true
   esdf_fiesta_break: false
   finer_esdf_on: true

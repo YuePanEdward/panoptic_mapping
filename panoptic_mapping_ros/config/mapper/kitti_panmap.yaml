@@ -5,16 +5,15 @@ input_from_bag: true
 use_lidar: &use_lidar true 
 filter_moving_objects: true
 use_panoptic_color: true # use semantic (false) or panoptic (true) color for the map visualization
-estimate_normal: true
+estimate_normal: &use_normal false
 use_threadsafe_submap_collection: false
 use_transform_caching: true
 transform_lookup_time: 0.1
 global_frame_name: world
-estimate_normal: true
 visualization_interval: -5.0
 data_logging_interval: 0.0
 print_timing_interval: -1.0
-esdf_update_interval: -5.0
+esdf_update_interval: 0.0
 max_input_queue_length: 1000
 ros_spinning_threads: 8
 
@@ -71,7 +70,7 @@ freespace_allocator:
   voxels_per_side: *voxels_per_side
   truncation_distance: -3  # negative = #vs (scale)
   # voxel_size: 0.5 
-  voxel_size: 0.6
+  voxel_size: 1.0
 
   # freespace esdf mapping
   esdf_integrator_name: voxfield # select from voxblox, voxfield, fiesta and edt
@@ -106,13 +105,15 @@ tsdf_integrator:  # different from those in voxblox
   use_lidar: *use_lidar  
 
   # Common
-  skip_free_space_submap: false # if true, only do panoptic 3d reconstruction
-  apply_normal_refine: true # use gradient to refine tsdf (for 3d reconstruction)
+  skip_free_space_submap: true # if true, only do panoptic 3d reconstruction
+  apply_normal_refine: *use_normal # use gradient to refine tsdf (for 3d reconstruction)
   apply_normal_refine_freespace: true # use gradient to refine esdf (for path planning)
+  behind_surface_reliable_band: true
   reliable_band_ratio: 2.0
+  reliable_normal_ratio_thre: 0.1
   use_weight_dropoff: true
   weight_dropoff_epsilon: -1.0 #if negative, means -k * voxel_size
-  weight_reduction: false
+  weight_reduction: true
   weight_reduction_exp: 2.0
   max_weight: 10000
 

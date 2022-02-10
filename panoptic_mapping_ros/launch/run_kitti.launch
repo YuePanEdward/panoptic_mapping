@@ -41,7 +41,7 @@
   
 
   <!-- Mapper -->
-  <arg name="config" default="kitti_mono"/> <!-- kitti_panmap, kitti_mono -->
+  <arg name="config" default="kitti_panmap"/> <!-- kitti_panmap, kitti_mono -->
   <arg name="shutdown_when_finished" default="false"/> 
   
   <!-- Save/Load maps -->
