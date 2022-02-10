@@ -44,6 +44,7 @@ void Submap::Config::initializeDependentVariableDefaults() {
   esdf_voxfield_integrator_config.min_weight = tsdf_min_weight;
   esdf_voxfield_integrator_config.gradient_sign = gradient_sign;
   esdf_voxfield_integrator_config.occ_voxel_size_ratio = occ_voxel_size_ratio;
+  esdf_voxfield_integrator_config.allocate_tsdf_in_range = true; // TODO(py): add to config
   esdf_voxfield_integrator_config.range_boundary_offset = 
     GlobalIndex(esdf_local_offset_x, esdf_local_offset_y, 
                 esdf_local_offset_z);

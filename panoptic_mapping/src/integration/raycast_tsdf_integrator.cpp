@@ -50,6 +50,7 @@ void RaycastIntegrator::Config::setupParamsAndPrinting() {
   setupParam("use_lidar", &use_lidar);
   setupParam("apply_normal_refine", &apply_normal_refine);
   setupParam("apply_normal_refine_freespace", &apply_normal_refine_freespace);
+  setupParam("behind_surface_reliable_band", &behind_surface_reliable_band);
   setupParam("reliable_band_ratio", &reliable_band_ratio);
   setupParam("reliable_normal_ratio_thre", &reliable_normal_ratio_thre);
   setupParam("skip_free_space_submap", &skip_free_space_submap);

@@ -33,17 +33,17 @@ import matplotlib.pyplot as plt
 
 
 # Flat dataset experiment results
-flat_tsdf_ours = np.array([0.010583, 0.024113, 0.037137, 0.051442, 0.072433]) * 100.0
+flat_tsdf_ours = np.array([0.010583, 0.024113, 0.036537, 0.051442, 0.072433]) * 100.0
 flat_tsdf_voxblox = np.array([0.014940, 0.031971, 0.044054, 0.062959, 0.088687]) * 100.0
 
-flat_mesh_ours = np.array([0.007675, 0.012193, 0.019522, 0.024548, 0.040639]) * 100.0
-flat_mesh_voxblox = np.array([0.008339, 0.013382, 0.019278, 0.023516, 0.040656]) * 100.0
+flat_mesh_ours = np.array([0.007675, 0.012193, 0.019522, 0.023570, 0.040639]) * 100.0
+flat_mesh_voxblox = np.array([0.008339, 0.013382, 0.019278, 0.024175, 0.040856]) * 100.0
 
 flat_coverage_ours = [76.91, 81.97, 84.02, 87.34, 90.46]
 flat_coverage_voxblox = [75.58, 80.41, 82.85, 85.31, 88.23]
 
 flat_esdf_occ_ours = np.array([0.000264, 0.001312, 0.002830, 0.005415, 0.006537]) * 100.0
-flat_esdf_occ_ours_2 = np.array([0.0238, 0.044681, 0.059845, 0.071851, 0.100507]) * 100.0
+flat_esdf_occ_ours_2 = np.array([0.023808, 0.044681, 0.059845, 0.071851, 0.100507]) * 100.0
 flat_esdf_occ_voxblox = np.array([0.028618, 0.049641, 0.060068, 0.073047, 0.122605]) * 100.0
 flat_esdf_occ_fiesta = np.array([0.000784, 0.002006, 0.002205, 0.005456, 0.005863]) * 100.0
 flat_esdf_occ_edt = np.array([0.003646, 0.007013, 0.009817, 0.011729, 0.008791]) * 100.0
@@ -54,7 +54,7 @@ flat_esdf_gt_voxblox = np.array([0.035935, 0.059597, 0.064879, 0.083333, 0.11503
 flat_esdf_gt_fiesta = np.array([0.021043, 0.040452, 0.047320, 0.058019, 0.096814]) * 100.0
 flat_esdf_gt_edt = np.array([0.020891, 0.042050, 0.048431, 0.060731, 0.098208]) * 100.0
 
-flat_esdf_time_ours = [88.0, 14.4, 6.4, 2.5, 1.6]
+flat_esdf_time_ours = [86.7, 13.7, 6.0, 2.4, 1.5]
 flat_esdf_time_voxblox = [347.9, 44.2, 14.7, 8.1, 4.6]
 flat_esdf_time_fiesta = [109.2, 17.5, 7.0, 2.8, 2.1]
 flat_esdf_time_edt = [127.9, 19.6, 7.8, 3.4, 2.6]
@@ -253,19 +253,19 @@ mai_esdf_time_edt = [1502.3, 901.7, 449.3, 261.8, 195.7, 121.6]
 # plt.show()
 
 # esdf accuracy (gt ref)
-l1_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_ours, '-o', linewidth = 5, markersize = 20, label='Voxfield (Ours)')
-l2_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_voxblox, '-^', linewidth = 5, markersize = 20, label='Voxblox')
-l3_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_fiesta, '-v', linewidth = 5, markersize = 20, label='FIESTA')
-l4_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_edt, '-*', linewidth = 5, markersize = 20, label='EDT')
+# l1_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_ours, '-o', linewidth = 5, markersize = 20, label='Voxfield (Ours)')
+# l2_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_voxblox, '-^', linewidth = 5, markersize = 20, label='Voxblox')
+# l3_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_fiesta, '-v', linewidth = 5, markersize = 20, label='FIESTA')
+# l4_esdf_acc_gt = plt.plot(mai_voxel_size_esdf, mai_esdf_gt_edt, '-*', linewidth = 5, markersize = 20, label='EDT')
 
-plt.rcParams.update({'font.size': 35})
-plt.xticks(np.arange(15, 45, step=5), fontsize=30)
-plt.yticks(fontsize=30)
-plt.ylim([0, 32])
-plt.xlabel('Voxel size (cm)', fontsize=40)
-plt.ylabel('ESDF error (cm) [Ref: GT point cloud] ', fontsize=35)
-plt.legend()
-plt.show()
+# plt.rcParams.update({'font.size': 35})
+# plt.xticks(np.arange(15, 45, step=5), fontsize=30)
+# plt.yticks(fontsize=30)
+# plt.ylim([0, 32])
+# plt.xlabel('Voxel size (cm)', fontsize=40)
+# plt.ylabel('ESDF error (cm) [Ref: GT point cloud] ', fontsize=35)
+# plt.legend()
+# plt.show()
 
 # l1_cov = plt.plot(voxel_size, flat_coverage_ours)
 # l2_cov = plt.plot(voxel_size, flat_coverage_voxblox)

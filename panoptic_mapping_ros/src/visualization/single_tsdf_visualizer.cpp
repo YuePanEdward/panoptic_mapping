@@ -95,7 +95,8 @@ std::vector<voxblox_msgs::MultiMesh> SingleTsdfVisualizer::generateMeshMsgs(
   // Set the voxblox internal color mode. Gray will be used for overwriting.
   voxblox::ColorMode color_mode_voxblox = voxblox::ColorMode::kGray;
   if (color_mode_ == ColorMode::kColor) {
-    color_mode_voxblox = voxblox::ColorMode::kColor;
+    // color_mode_voxblox = voxblox::ColorMode::kColor;
+    color_mode_voxblox = voxblox::ColorMode::kLambertColor; // Better visualization with normal
   } else if (color_mode_ == ColorMode::kNormals) {
     color_mode_voxblox = voxblox::ColorMode::kNormals;
   }

@@ -486,7 +486,7 @@ std::string MapEvaluator::computeMeshError(const EvaluationRequest& request) {
     buildKdTreeMesh();
 
     int total_points = 0;
-    int truncated_points = 0;
+    int inlier_points = 0;
     std::vector<float> errors_gt2mesh;
     const uint64_t interval = gt_ptcloud_->size() / 100;
     ProgressBar bar_2;
@@ -499,20 +499,20 @@ std::string MapEvaluator::computeMeshError(const EvaluationRequest& request) {
       std::vector<float> out_dist_sqr(1);
       int num_results = kdtree_mesh_->knnSearch(&query_pt[0], 1, &ret_index[0],
                                                 &out_dist_sqr[0]);
-      if (num_results != 0) { //found
+      if (num_results != 0) { // found
         const float error = std::sqrt(out_dist_sqr[0]);
           //(kdtree_data_gt_.points[ret_index[0]] - point).norm();
 
         if (error > trunc_dist_) {
-          truncated_points++;
           if (!request.ignore_truncated_points) { // don't ignore
               errors_gt2mesh.push_back(trunc_dist_); //use the truncation dist
           }
         } else { //not truncated
           errors_gt2mesh.emplace_back(error);
+          inlier_points++;
         }
-        total_points++;
       }
+      total_points++;
 
       // Progress bar.
       if (total_points % interval == 0) {
@@ -541,9 +541,12 @@ std::string MapEvaluator::computeMeshError(const EvaluationRequest& request) {
     }
 
     float chamfer_dist = std::sqrt(0.5 * (rmse_gt2mesh * rmse_gt2mesh + rmse_mesh2gt * rmse_mesh2gt));
+    float mesh_coverage_recall = 1.0 * inlier_points / total_points;  // inlier ratio in the gt point cloud
+
 
     if (request.verbosity > 1){
       ROS_INFO("Chamfer Dist [m]: %f", chamfer_dist);
+      ROS_INFO("Mesh coverage[%]: %f", mesh_coverage_recall * 100.0);
     }
   }
   

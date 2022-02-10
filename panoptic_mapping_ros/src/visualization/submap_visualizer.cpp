@@ -312,7 +312,7 @@ std::vector<voxblox_msgs::MultiMesh> SubmapVisualizer::generateMeshMsgs(
         color_mode_ == ColorMode::kClassification ||
         (color_mode_ == ColorMode::kPersistent && 
          submap.getChangeState() != ChangeState::kAbsent)) {
-      color_mode_voxblox = voxblox::ColorMode::kLambertColor;//use the voxel's own color
+      color_mode_voxblox = voxblox::ColorMode::kLambertColor; // use the voxel's own color
     } else if (color_mode_ == ColorMode::kNormals) {
       color_mode_voxblox = voxblox::ColorMode::kNormals;
     }

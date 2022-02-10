@@ -87,6 +87,8 @@ class RaycastIntegrator : public TsdfIntegratorBase {
 
     bool apply_normal_refine_freespace = false;
 
+    bool behind_surface_reliable_band = false; // apply a reliable band also behind the surface
+
     float reliable_band_ratio = 2.0; // the reliable band distance threshold would be reliable_band_ratio * truncation_distance
 
     float reliable_normal_ratio_thre = 0.2; 

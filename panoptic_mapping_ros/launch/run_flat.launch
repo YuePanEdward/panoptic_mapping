@@ -11,7 +11,7 @@
   <!-- Flat Dataset args -->
   <!-- It's not a rosbag file, why do not use one -->
   <!-- For other datasets, you can also provide the input likewise-->
-  <arg name="base_path" default="/media/yuepan/SeagateNew/1_data/thesis_dataset/flat_dataset/run1"/> 
+  <arg name="base_path" default="/media/yuepan/SeagateNew/1_data/flat_dataset/run1"/> 
   <arg name="play_rate" default="2"/>  <!-- Realtime factor (how many frame per second) -->
   <arg name="wait_time" default="1"/>  <!-- s -->
   <arg name="max_frames" default="1000"/> <!-- 90 -->
@@ -27,8 +27,9 @@
   <arg name="shutdown_when_finished" default="false"/> 
   
   <!-- Save/Load maps -->
+  <!-- Not used  -->
   <arg name="load_map" default = "false"/>
-  <arg name="load_file" default = "/media/yuepan/SeagateNew/1_data/thesis_dataset/flat_dataset/results/run1.panmap"/>
+  <arg name="load_file" default = "/media/yuepan/SeagateNew/1_data/flat_dataset/results/run1.panmap"/>
 
 
 <!-- ============ Run ============ -->

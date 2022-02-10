@@ -423,12 +423,16 @@ void SingleRaycastIntegrator::integrateRay(Submap* submap, const Point &p_C, con
   const Point origin = T_S_C.getPosition(); //sensor's position in submap's frame
   const Point p_S = T_S_C * p_C;
   
+  float ray_cast_trunc = config_.ri_config.behind_surface_reliable_band ? 
+                         truncation_distance * config_.ri_config.reliable_band_ratio :
+                         truncation_distance;
+
   // for Ray OG
   voxblox::RayCaster ray_caster(origin, p_S, is_clearing, // is_clearing should be false here
-                                integrate_full_ray,
+                                integrate_full_ray, // enabled carving or not
                                 config_.ri_config.max_ray_length_m, 
                                 1.0 / voxel_size,
-                                truncation_distance); // original truncation_distance 
+                                ray_cast_trunc); // original truncation_distance 
                 
 
   TsdfBlock::Ptr block = nullptr;
@@ -505,7 +509,7 @@ bool SingleRaycastIntegrator::updateVoxel(TsdfVoxel* voxel, const Point& origin,
       return false;
     sdf *= normal_ratio; // get the non-projective sdf, if it's still larger than truncation distance, the gradient would not be updated
   }
-  if (sdf < -truncation_distance) {
+  if (sdf < -truncation_distance) { // behind the surface too much
     return false;
   }
   bool with_init_weight = false;
@@ -526,7 +530,7 @@ bool SingleRaycastIntegrator::updateVoxel(TsdfVoxel* voxel, const Point& origin,
     }
     updateVoxelValues(voxel, sdf, weight, &color);
     
-    // TODO
+    // TODO (py):
     // Update the semantic information if requested.
     // if (class_voxel) {
     //   // Uncertainty voxels are handled differently.
