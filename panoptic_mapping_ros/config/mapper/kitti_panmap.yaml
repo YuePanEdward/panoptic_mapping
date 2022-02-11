@@ -5,7 +5,7 @@ input_from_bag: true
 use_lidar: &use_lidar true 
 filter_moving_objects: true
 use_panoptic_color: true # use semantic (false) or panoptic (true) color for the map visualization
-estimate_normal: &use_normal false
+estimate_normal: &use_normal true
 use_threadsafe_submap_collection: false
 use_transform_caching: true
 transform_lookup_time: 0.1
@@ -54,8 +54,8 @@ submap_allocator:
   # Semantic (figure out why can't we keep decreasing these values)
   small_instance_voxel_size: 0.05
   medium_instance_voxel_size: 0.1
-  large_instance_voxel_size: 0.25
-  background_voxel_size: 0.25
+  large_instance_voxel_size: 0.15
+  background_voxel_size: 0.15
   unknown_voxel_size: 0.5
 
   # small_instance_voxel_size: 0.25
@@ -114,7 +114,7 @@ tsdf_integrator:  # different from those in voxblox
   use_weight_dropoff: true
   weight_dropoff_epsilon: -1.0 #if negative, means -k * voxel_size
   weight_reduction: true
-  weight_reduction_exp: 2.0
+  weight_reduction_exp: 1.0
   max_weight: 10000
 
   # Projective Integrator
@@ -138,24 +138,25 @@ tsdf_integrator:  # different from those in voxblox
   
 map_management:
   type: submaps
-  verbosity: 4
+  verbosity: 2
   
   # Frequencies
   # Perform actions every n ticks (frames), set 0 to turn off.
-  prune_active_blocks_frequency: 1
-  activity_management_frequency: 1
+  prune_active_blocks_frequency: 5
+  activity_management_frequency: 1 # sometimes it cost too much time
   change_detection_frequency: 0
   
   # Behavior
   # If find candidate inactive submaps which have the bounding volume intersection and similar TSDF as the currently deactivated one, merge them or not
-  merge_deactivated_submaps_if_possible: true
+  merge_deactivated_submaps_if_possible: &merge_map false # better to be true
   # When deactivate the submap, removes those non-belonging points from the TSDF and deletes the class layer or not
   apply_class_layer_when_deactivating_submaps: false
   
   activity_manager:
-    verbosity: 4
+    verbosity: 1
     required_reobservations: 3 # Consecutive observations to keep new submaps.
-    deactivate_after_missed_detections: 5  # Deactivate submaps when not observed for x frames.
+    deactivate_after_missed_detections: 10  # Deactivate submaps when not observed for x frames.
+    update_after_deactivation: *merge_map
   # Done by activity manager
   # 1. checkRequiredRedetection, if the submap is not tracked consecutive for X frames from the beginning, discard the submap
   # 2. checkMissedDetections, if the submap is not not detected for Y consecutive frames, deactivate the submap, but it should also obey 1

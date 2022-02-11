@@ -148,7 +148,7 @@ class Submap {
   /**
    * @brief Set the submap status to inactive and update its status accordingly.
    */
-  void finishActivePeriod();
+  void finishActivePeriod(bool update_all = true);
 
   /**
    * @brief Update all dynamically computable quantities.

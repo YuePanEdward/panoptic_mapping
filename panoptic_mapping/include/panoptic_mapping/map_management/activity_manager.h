@@ -27,6 +27,8 @@ class ActivityManager {
     int deactivate_after_missed_detections =
         0;  // Deactivate submaps when not observed for x frames. Use 0 to
             // ignore.
+    
+    bool update_after_deactivation = true;
 
     Config() { setConfigName("ActivityManager"); }
 

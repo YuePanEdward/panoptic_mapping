@@ -179,7 +179,7 @@ void MapManager::manageSubmapActivity(SubmapCollection* submaps) {
       }
     }
 
-    // Try to merge the submaps. (for each submap that is deactivated in current frame)
+    // Try to merge the submaps. (for each submap that is deactivated in current frame), time-consuming
     if (config_.merge_deactivated_submaps_if_possible) {
       for (int id : deactivated_submaps) { // for all the submaps begin to be inactive at current frame
         int merged_id;

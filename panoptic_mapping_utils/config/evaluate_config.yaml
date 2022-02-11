@@ -17,7 +17,7 @@
 
 # kitti dataset seq 07
 ground_truth_pointcloud_file: /media/yuepan/SeagateNew/1_data/kitti/gt_map/merged_gt_map_kitti_07.ply
-map_file: /media/yuepan/SeagateNew/1_data/kitti/results/pan_5_10_25_25cm_nonormal_test.panmap
+map_file: /media/yuepan/SeagateNew/1_data/kitti/results/pan_5_10_25_25cm_normal_test_3.panmap
 esdf_file_path: /media/yuepan/SeagateNew/1_data/kitti/results/mono_35cm_fiesta.esdf
 
 # newer college dataset

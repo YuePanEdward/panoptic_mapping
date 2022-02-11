@@ -14,6 +14,7 @@ void ActivityManager::Config::setupParamsAndPrinting() {
   setupParam("required_reobservations", &required_reobservations);
   setupParam("deactivate_after_missed_detections",
              &deactivate_after_missed_detections);
+  setupParam("update_after_deactivation", &update_after_deactivation);
 }
 
 ActivityManager::ActivityManager(const Config& config)
@@ -23,6 +24,9 @@ ActivityManager::ActivityManager(const Config& config)
 
 void ActivityManager::processSubmaps(SubmapCollection* submaps) {
   CHECK_NOTNULL(submaps);
+
+  Timer timer("umap_management/manage_submap_activity/manage");
+
   std::unordered_set<int> submaps_to_delete;
   for (Submap& submap : *submaps) {
     // Parse only active object maps.
@@ -44,6 +48,8 @@ void ActivityManager::processSubmaps(SubmapCollection* submaps) {
     // if the active submap is not not detected for Y consecutive frames, deactivate the active submap
     checkMissedDetections(&submap);
   }
+
+  timer.Stop();
 
   // Remove requested submaps.
   for (const int id : submaps_to_delete) {
@@ -104,7 +110,7 @@ void ActivityManager::checkMissedDetections(Submap* submap) {
     }
     it->second--;
     if (it->second <= 0) {
-      submap->finishActivePeriod(); // deactivate
+      submap->finishActivePeriod(config_.update_after_deactivation); // deactivate
       if (config_.verbosity > 3) {
         ROS_INFO("Deactivate submap %d (%s)", submap->getID(), submap->getName().c_str());
       }

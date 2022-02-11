@@ -332,14 +332,15 @@ std::unique_ptr<Submap> Submap::loadFromStream(
   return submap;
 }
 
-void Submap::finishActivePeriod() {
+void Submap::finishActivePeriod(bool update_all) {
   if (!is_active_) {
     return;
   }
   is_active_ = false;
   // Since the submap was active just before we assume it still exists.
   change_state_ = ChangeState::kPersistent;
-  updateEverything();
+  if (update_all)
+    updateEverything(); // time-consuming
 }
 
 void Submap::updateEverything(bool only_updated_blocks) {
